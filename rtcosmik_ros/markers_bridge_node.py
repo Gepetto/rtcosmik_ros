@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ROS 2 bridge: publish RT-COSMIK."""
+"""ROS 2 bridge: publish RT-COSMIK markers."""
 
 from queue import Empty
 
