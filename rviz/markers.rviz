@@ -1,0 +1,22 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Enabled: true
+    - Class: rviz_default_plugins/MarkerArray
+      Name: RT-COSMIK Markers
+      Enabled: true
+      Marker Topic:
+        Value: /rtcosmik/markers
+      Namespaces:
+        rtcosmik_markers: true
+  Global Options:
+    Fixed Frame: world
+  Name: root
+Window Geometry:
+  Height: 720
+  Width: 1280
