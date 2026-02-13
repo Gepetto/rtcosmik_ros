@@ -4,6 +4,7 @@
 from collections import deque
 from datetime import datetime
 import os
+import shutil
 import threading
 import time
 from pathlib import Path
@@ -15,7 +16,7 @@ import pinocchio as pin
 import rclpy
 import torch
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 
 from geometry_msgs.msg import Pose, PoseArray, TransformStamped
 from sensor_msgs.msg import JointState
@@ -58,18 +59,24 @@ class RTCosmikMarkerBridge(Node):
         self.scaled_urdf_output_path = self._default_human_urdf_path().with_name('human_scaled.urdf')
         self.joint_names = self._load_joint_names_from_urdf(self._default_human_urdf_path())
         self.base_frame_id = self._load_root_link_from_urdf(self._default_human_urdf_path())
+        self._source_scaled_urdf_output_path = self._find_workspace_source_scaled_urdf_path()
+        self._reliable_qos = QoSProfile(
+            depth=20,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.VOLATILE,
+        )
 
-        self.pose_publisher_ = self.create_publisher(PoseArray, '/rtcosmik/body_poses', qos_profile_sensor_data)
-        self.q_publisher_ = self.create_publisher(Float64MultiArray, '/rtcosmik/q', qos_profile_sensor_data)
+        self.pose_publisher_ = self.create_publisher(PoseArray, '/rtcosmik/body_poses', self._reliable_qos)
+        self.q_publisher_ = self.create_publisher(Float64MultiArray, '/rtcosmik/q', self._reliable_qos)
         self.joint_state_publisher_ = self.create_publisher(
             JointState,
             '/rtcosmik/joint_states',
-            qos_profile_sensor_data,
+            self._reliable_qos,
         )
         self.marker_publisher_ = self.create_publisher(
             MarkerArray,
             '/rtcosmik/markers',
-            qos_profile_sensor_data,
+            self._reliable_qos,
         )
         self.tf_broadcaster_ = TransformBroadcaster(self) if self.publish_base_tf else None
 
@@ -140,6 +147,18 @@ class RTCosmikMarkerBridge(Node):
         if roots:
             return roots[0]
         return 'middle_pelvis'
+
+    def _find_workspace_source_scaled_urdf_path(self):
+        """
+        Locate workspace source URDF path to mirror generated scaled model for visibility.
+        Expected layout: <ws>/src/rtcosmik_ros/urdf/human_scaled.urdf
+        """
+        here = Path(__file__).resolve()
+        for ancestor in here.parents:
+            candidate_dir = ancestor / 'src' / 'rtcosmik_ros' / 'urdf'
+            if candidate_dir.is_dir():
+                return candidate_dir / 'human_scaled.urdf'
+        return None
 
     def _start_rtcosmik_runtime(self):
         width, height = settings.width, settings.height
@@ -268,6 +287,16 @@ class RTCosmikMarkerBridge(Node):
             scaled_model=human_model,
         )
         self.get_logger().info(f'Scaled URDF generated at {output_path}')
+
+        if (
+            self._source_scaled_urdf_output_path is not None
+            and self._source_scaled_urdf_output_path.resolve() != output_path.resolve()
+        ):
+            self._source_scaled_urdf_output_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(output_path, self._source_scaled_urdf_output_path)
+            self.get_logger().info(
+                f'Scaled URDF mirrored to source tree at {self._source_scaled_urdf_output_path}'
+            )
 
     def _model_has_freeflyer(self, model):
         if model is None or model.njoints <= 1:
