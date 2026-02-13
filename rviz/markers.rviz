@@ -7,6 +7,24 @@ Visualization Manager:
     - Class: rviz_default_plugins/Grid
       Name: Grid
       Enabled: true
+    - Class: rviz_default_plugins/RobotModel
+      Name: Human Model
+      Enabled: true
+      Description Source: Topic
+      Description Topic:
+        Value: /robot_description
+      TF Prefix: ""
+      Visual Enabled: true
+      Collision Enabled: false
+    - Class: rviz_default_plugins/PoseArray
+      Name: Body Segment Poses
+      Enabled: true
+      Topic:
+        Value: /rtcosmik/body_poses
+      Color: 25; 255; 25
+      Arrow Length: 0.07
+      Shaft Length: 0.05
+      Radius: 0.005
     - Class: rviz_default_plugins/MarkerArray
       Name: RT-COSMIK Markers
       Enabled: true

@@ -43,7 +43,7 @@ setup(
     license='BSD-2-Clause',
     entry_points={
         'console_scripts': [
-            'marker_bridge = rtcosmik_ros.markers_bridge_node:main',
+            'marker_bridge = rtcosmik_ros.ros2_bridge_node:main',
         ],
     },
 )
