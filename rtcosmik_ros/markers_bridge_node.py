@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """ROS 2 bridge: publish RT-COSMIK markers."""
 
+import os
 from queue import Empty
 
 import rclpy
@@ -40,8 +41,18 @@ class RTCosmikMarkerBridge(Node):
         width, height = settings.width, settings.height
         frame_shape = (height, width, 3)
 
-        mtxs, dists, projections, _, _ = load_camera_parameters(settings.cam_calib_path)
-        world_r1_cam, world_t1_cam = load_world_transformation(settings.cam_calib_path)
+        cam_calib_path = os.getenv('RTCOSMIK_CAM_CALIB_PATH', settings.cam_calib_path)
+        if cam_calib_path != settings.cam_calib_path:
+            self.get_logger().info(
+                f'Overriding RT-COSMIK camera calibration path from environment: {cam_calib_path}'
+            )
+            # Keep settings object coherent for downstream RT-COSMIK code.
+            settings.cam_calib_path = cam_calib_path
+        else:
+            self.get_logger().info(f'Using RT-COSMIK camera calibration path: {cam_calib_path}')
+
+        mtxs, dists, projections, _, _ = load_camera_parameters(cam_calib_path)
+        world_r1_cam, world_t1_cam = load_world_transformation(cam_calib_path)
 
         cameras = list_cameras()
         num_cameras = len(cameras)
