@@ -9,6 +9,12 @@ import numpy as np
 import pinocchio as pin
 
 
+def _mesh_to_package_uri(mesh_path: str) -> str:
+    """Rewrite mesh paths to package-relative URI expected by RViz/robot_state_publisher."""
+    name = Path(str(mesh_path)).name
+    return f"package://rtcosmik_ros/meshes/{name}"
+
+
 def _joint_urdf_type(joint):
     """Map Pinocchio joint model shortname to URDF joint type."""
     short = joint.shortname() if hasattr(joint, "shortname") else "Unknown"
@@ -68,7 +74,7 @@ def _joint_axis_in_parent(joint, joint_type):
     return axis / norm
 
 
-def save_scaled_urdf(new_model_name, new_model_path, scaled_model):
+def save_scaled_urdf(new_model_name, new_model_path, scaled_model, visual_model=None, collision_model=None):
     """
     Save a scaled Pinocchio model as a URDF file.
 
@@ -111,6 +117,7 @@ def save_scaled_urdf(new_model_name, new_model_path, scaled_model):
         mass_carrier_by_joint[joint_id] = chosen.name
 
     for frame in body_frames:
+        link_name = frame.name
         parent_joint_idx = frame.parentJoint
         parent_inertia = scaled_model.inertias[parent_joint_idx]
 
@@ -123,7 +130,7 @@ def save_scaled_urdf(new_model_name, new_model_path, scaled_model):
             com = np.zeros(3)
             inertia_matrix = np.zeros((3, 3))
 
-        link_elem = ET.SubElement(urdf, "link", name=frame.name)
+        link_elem = ET.SubElement(urdf, "link", name=link_name)
         inertial_elem = ET.SubElement(link_elem, "inertial")
         ET.SubElement(inertial_elem, "mass", value=f"{mass:.9g}")
         ET.SubElement(
@@ -142,6 +149,66 @@ def save_scaled_urdf(new_model_name, new_model_path, scaled_model):
             iyz=f"{inertia_matrix[1, 2]:.9g}",
             izz=f"{inertia_matrix[2, 2]:.9g}",
         )
+
+        # Visual geometry
+        if visual_model is not None:
+            frame_id = scaled_model.getFrameId(link_name)
+            for geom in visual_model.geometryObjects:
+                if geom.parentFrame == frame_id:
+                    mesh_path = geom.meshPath
+                    if not mesh_path:
+                        continue
+                    visual_elem = ET.SubElement(link_elem, "visual")
+                    placement = geom.placement
+                    xyz = placement.translation
+                    rpy = pin.rpy.matrixToRpy(placement.rotation)
+                    ET.SubElement(
+                        visual_elem,
+                        "origin",
+                        xyz=f"{xyz[0]:.6f} {xyz[1]:.6f} {xyz[2]:.6f}",
+                        rpy=f"{rpy[0]:.6f} {rpy[1]:.6f} {rpy[2]:.6f}"
+                    )
+                    geometry_elem = ET.SubElement(visual_elem, "geometry")
+                    scale = geom.meshScale
+                    ET.SubElement(
+                        geometry_elem,
+                        "mesh",
+                        filename=_mesh_to_package_uri(mesh_path),
+                        scale=f"{scale[0]:.6f} {scale[1]:.6f} {scale[2]:.6f}"
+                    )
+                    material_name = (
+                        "body_color_L" if "left_" in link_name
+                        else "body_color_R" if "right_" in link_name
+                        else "body_color"
+                    )
+                    ET.SubElement(visual_elem, "material", name=material_name)
+
+        # Collision geometry
+        if collision_model is not None:
+            frame_id = scaled_model.getFrameId(link_name)
+            for geom in collision_model.geometryObjects:
+                if geom.parentFrame == frame_id:
+                    mesh_path = geom.meshPath
+                    if not mesh_path:
+                        continue
+                    collision_elem = ET.SubElement(link_elem, "collision")
+                    placement = geom.placement
+                    xyz = placement.translation
+                    rpy = pin.rpy.matrixToRpy(placement.rotation)
+                    ET.SubElement(
+                        collision_elem,
+                        "origin",
+                        xyz=f"{xyz[0]:.6f} {xyz[1]:.6f} {xyz[2]:.6f}",
+                        rpy=f"{rpy[0]:.6f} {rpy[1]:.6f} {rpy[2]:.6f}"
+                    )
+                    geometry_elem = ET.SubElement(collision_elem, "geometry")
+                    scale = geom.meshScale
+                    ET.SubElement(
+                        geometry_elem,
+                        "mesh",
+                        filename=_mesh_to_package_uri(mesh_path),
+                        scale=f"{scale[0]:.6f} {scale[1]:.6f} {scale[2]:.6f}"
+                    )
 
     # Detect free-flyer to skip it in URDF tree joints.
     has_freeflyer = False

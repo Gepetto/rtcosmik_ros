@@ -7,6 +7,7 @@ import os
 import shutil
 import threading
 import time
+import traceback
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
@@ -14,7 +15,6 @@ import example_robot_data as robex
 import numpy as np
 import pinocchio as pin
 import rclpy
-import torch
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 
@@ -30,7 +30,6 @@ from rtcosmik.camera.camera import Camera
 from rtcosmik.camera.cam_utils import (
     list_cameras,
     load_camera_parameters,
-    load_world_transformation,
 )
 from rtcosmik.config_loader import settings
 from rtcosmik.filtering.iir import IIR
@@ -94,11 +93,10 @@ class RTCosmikMarkerBridge(Node):
         self._mtxs = None
         self._dists = None
         self._projections = None
-        self._world_r1_cam = None
-        self._world_t1_cam = None
         self._max_frame_skew_s = 0.050
         self._last_skew_warn_t = 0.0
         self._has_freeflyer_model = False
+        self._last_invalid_warn_t = 0.0
 
         self._start_rtcosmik_runtime()
 
@@ -172,7 +170,6 @@ class RTCosmikMarkerBridge(Node):
             settings.cam_calib_path = cam_calib_path
 
         self._mtxs, self._dists, self._projections, _, _ = load_camera_parameters(cam_calib_path)
-        self._world_r1_cam, self._world_t1_cam = load_world_transformation(cam_calib_path)
 
         cameras = list_cameras()
         self._num_cameras = len(cameras)
@@ -279,12 +276,20 @@ class RTCosmikMarkerBridge(Node):
         self._last_frame_counters = new_counters
         return frames
 
-    def _write_scaled_urdf_from_pin_model(self, human_model, urdf_output_path: Path):
+    def _write_scaled_urdf_from_pin_model(
+        self,
+        human_model,
+        urdf_output_path: Path,
+        human_visual_model=None,
+        human_collision_model=None,
+    ):
         """Serialize calibrated Pinocchio model to URDF used by robot_state_publisher."""
         output_path = save_scaled_urdf(
             new_model_name='human_scaled',
             new_model_path=urdf_output_path,
             scaled_model=human_model,
+            visual_model=human_visual_model,
+            collision_model=human_collision_model,
         )
         self.get_logger().info(f'Scaled URDF generated at {output_path}')
 
@@ -318,11 +323,54 @@ class RTCosmikMarkerBridge(Node):
         # Plain stdout token used by launch OnProcessIO to trigger RViz and robot_state_publisher.
         print(INIT_DONE_TOKEN, flush=True)
 
+    def _warn_throttled(self, message: str, period_s: float = 1.0):
+        now_t = time.monotonic()
+        if now_t - self._last_invalid_warn_t > period_s:
+            self._last_invalid_warn_t = now_t
+            self.get_logger().warning(message)
+
+    def _compute_body_poses(self, model, data, q):
+        if model is None or data is None:
+            return {}
+        q_array = np.asarray(q, dtype=float).flatten()
+        if q_array.size < model.nq or not np.all(np.isfinite(q_array[:model.nq])):
+            return {}
+
+        # Ensure freeflyer quaternion stays normalized before kinematics.
+        q_model = np.array(q_array[:model.nq], dtype=float, copy=True)
+        try:
+            q_model = pin.normalize(model, q_model)
+            pin.forwardKinematics(model, data, q_model)
+            pin.updateFramePlacements(model, data)
+        except Exception as exc:
+            self._warn_throttled(f'Body pose computation skipped for invalid model state: {exc}')
+            return {}
+
+        poses = {}
+        for frame_id, frame in enumerate(model.frames):
+            if frame.type != pin.FrameType.BODY:
+                continue
+            if "virtual" in frame.name:
+                continue
+            oMf = data.oMf[frame_id]
+            xyz = np.asarray(oMf.translation, dtype=float).reshape(3)
+            if not np.all(np.isfinite(xyz)):
+                continue
+            quat = pin.Quaternion(oMf.rotation)
+            poses[frame.name] = {
+                "position": [float(xyz[0]), float(xyz[1]), float(xyz[2])],
+                "orientation": [float(quat.x), float(quat.y), float(quat.z), float(quat.w)],
+            }
+        return poses
+
     def _processing_loop(self):
         first_sample = True
         p3d_buffer = deque(maxlen=settings.N)
         ik_class = None
         human_model = None
+        human_data = None
+        human_visual_model = None
+        human_collision_model = None
         deque_lstm_dict = None
         x_array = None
         u_array = None
@@ -383,10 +431,8 @@ class RTCosmikMarkerBridge(Node):
                     dists=self._dists,
                     projections=self._projections,
                 )
-                p3d_np = torch.from_numpy(p3d).to(dtype=torch.float32)
-                p3d_in_world = np.array(
-                    [np.dot(self._world_r1_cam, point) + self._world_t1_cam for point in p3d_np]
-                )
+                # Triangulated markers are already in the calibrated frame.
+                p3d_in_world = np.asarray(p3d, dtype=np.float32)
 
                 if first_sample:
                     for _ in range(settings.N):
@@ -414,6 +460,8 @@ class RTCosmikMarkerBridge(Node):
                         gender=settings.human_gender,
                     ).robot
                     human_model = human.model
+                    human_collision_model = human.collision_model
+                    human_visual_model = human.visual_model
                     self._has_freeflyer_model = self._model_has_freeflyer(human_model)
 
                     human_model = scale_human_model(
@@ -509,7 +557,10 @@ class RTCosmikMarkerBridge(Node):
                     self._write_scaled_urdf_from_pin_model(
                         human_model,
                         self.scaled_urdf_output_path,
+                        human_visual_model=human_visual_model,
+                        human_collision_model=human_collision_model,
                     )
+                    human_data = human_model.createData()
                     self._announce_initialization_done()
                     first_sample = False
                     continue
@@ -541,51 +592,81 @@ class RTCosmikMarkerBridge(Node):
                         "Invalid ik type, should be sbs (sample by sample) or mhe (moving horizon estimation)."
                     )
 
-                self._publish_outputs(mks_dict, q)
+                body_poses = self._compute_body_poses(human_model, human_data, q)
+                self._publish_outputs(mks_dict, q, body_poses=body_poses)
 
         except Exception as exc:
             if self.stop_event is not None:
                 self.stop_event.set()
-            self.get_logger().error(f'RT-COSMIK runtime loop crashed: {exc}')
+            self.get_logger().error(
+                f'RT-COSMIK runtime loop crashed: {exc}\n{traceback.format_exc()}'
+            )
         finally:
             self.get_logger().info('RT-COSMIK runtime loop terminated.')
 
-    def _publish_outputs(self, markers, q_values):
+    def _publish_outputs(self, markers, q_values, body_poses=None):
         now = self.get_clock().now().to_msg()
 
-        q_array = np.asarray(q_values).flatten()
+        try:
+            q_array = np.asarray(q_values, dtype=float).flatten()
+        except Exception as exc:
+            self._warn_throttled(f'Skipping q publish, invalid q payload type: {exc}')
+            q_array = np.array([], dtype=float)
         if q_array.size > 0:
-            q_msg = Float64MultiArray()
-            q_msg.data = [float(v) for v in q_array]
-            self.q_publisher_.publish(q_msg)
+            if np.all(np.isfinite(q_array)):
+                q_msg = Float64MultiArray()
+                q_msg.data = [float(v) for v in q_array]
+                self.q_publisher_.publish(q_msg)
 
-            if self.joint_names:
-                q_joints = self._extract_joint_positions(q_array)
-                joint_count = min(len(self.joint_names), len(q_joints))
-                js_msg = JointState()
-                js_msg.header = Header(stamp=now, frame_id=self.world_frame_id)
-                js_msg.name = self.joint_names[:joint_count]
-                js_msg.position = q_joints[:joint_count]
-                self.joint_state_publisher_.publish(js_msg)
+                if self.joint_names:
+                    q_joints = self._extract_joint_positions(q_array)
+                    joint_count = min(len(self.joint_names), len(q_joints))
+                    js_msg = JointState()
+                    js_msg.header = Header(stamp=now, frame_id=self.world_frame_id)
+                    js_msg.name = self.joint_names[:joint_count]
+                    js_msg.position = q_joints[:joint_count]
+                    self.joint_state_publisher_.publish(js_msg)
 
-            if self.publish_base_tf:
-                self._publish_base_transform(q_array, now)
+                if self.publish_base_tf:
+                    self._publish_base_transform(q_array, now)
+            else:
+                self._warn_throttled('Skipping non-finite q sample.')
 
         pose_array = PoseArray()
         pose_array.header = Header(stamp=now, frame_id=self.world_frame_id)
-        for xyz in markers.values():
-            pose = Pose()
-            pose.position.x = float(xyz[0])
-            pose.position.y = float(xyz[1])
-            pose.position.z = float(xyz[2])
-            pose.orientation.w = 1.0
-            pose_array.poses.append(pose)
+        if body_poses:
+            for pose_data in body_poses.values():
+                pos = pose_data["position"]
+                ori = pose_data["orientation"]
+                if not np.all(np.isfinite(pos)) or not np.all(np.isfinite(ori)):
+                    continue
+                pose = Pose()
+                pose.position.x = float(pos[0])
+                pose.position.y = float(pos[1])
+                pose.position.z = float(pos[2])
+                pose.orientation.x = float(ori[0])
+                pose.orientation.y = float(ori[1])
+                pose.orientation.z = float(ori[2])
+                pose.orientation.w = float(ori[3])
+                pose_array.poses.append(pose)
+        else:
+            for xyz in markers.values():
+                if not np.all(np.isfinite(xyz)):
+                    continue
+                pose = Pose()
+                pose.position.x = float(xyz[0])
+                pose.position.y = float(xyz[1])
+                pose.position.z = float(xyz[2])
+                pose.orientation.w = 1.0
+                pose_array.poses.append(pose)
 
         self.pose_publisher_.publish(pose_array)
 
         if self.enable_markers:
             marker_array = MarkerArray()
             for idx, (name, xyz) in enumerate(markers.items()):
+                if not np.all(np.isfinite(xyz)):
+                    continue
                 marker = Marker()
                 marker.header = Header(stamp=now, frame_id=self.world_frame_id)
                 marker.ns = 'rtcosmik_markers'
@@ -629,6 +710,9 @@ class RTCosmikMarkerBridge(Node):
             return
 
         quat = np.asarray(q_array[3:7], dtype=float)
+        if not np.all(np.isfinite(quat)) or not np.all(np.isfinite(q_array[:3])):
+            self._warn_throttled('Skipping non-finite base transform sample.')
+            return
         quat_norm = np.linalg.norm(quat)
         if quat_norm < 1e-12:
             return
