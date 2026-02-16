@@ -23,6 +23,7 @@ from sensor_msgs.msg import JointState
 from std_msgs.msg import Header, Float64MultiArray
 from tf2_ros import TransformBroadcaster
 from visualization_msgs.msg import Marker, MarkerArray
+from builtin_interfaces.msg import Time as TimeMsg
 
 from ament_index_python.packages import get_package_share_directory
 
@@ -241,6 +242,22 @@ class RTCosmikMarkerBridge(Node):
             )
         return False
 
+    def _build_bundle_stamp(self, timestamps):
+        parsed = []
+        for ts in timestamps:
+            try:
+                parsed.append(datetime.strptime(ts, "%Y-%m-%d %H:%M:%S.%f"))
+            except Exception:
+                continue
+
+        if not parsed:
+            return self.get_clock().now().to_msg()
+
+        avg_epoch_s = sum(dt.timestamp() for dt in parsed) / len(parsed)
+        sec = int(avg_epoch_s)
+        nanosec = int((avg_epoch_s - sec) * 1e9)
+        return TimeMsg(sec=sec, nanosec=nanosec)
+
     def _read_synchronized_frames(self):
         frames = [None] * self._num_cameras
         new_counters = self._last_frame_counters.copy()
@@ -274,7 +291,7 @@ class RTCosmikMarkerBridge(Node):
             return None
 
         self._last_frame_counters = new_counters
-        return frames
+        return frames, self._build_bundle_stamp(timestamps)
 
     def _write_scaled_urdf_from_pin_model(
         self,
@@ -403,10 +420,11 @@ class RTCosmikMarkerBridge(Node):
                     self._assert_camera_processes_alive()
                     last_health_check_t = now_t
 
-                frames = self._read_synchronized_frames()
-                if frames is None:
+                frame_bundle = self._read_synchronized_frames()
+                if frame_bundle is None:
                     time.sleep(0.001)
                     continue
+                frames, frame_stamp = frame_bundle
 
                 nlf_out, _, _, _ = estimator.estimate_from_frames(frames)
                 nlf_out_2d = nlf_out["poses2d"]
@@ -593,7 +611,7 @@ class RTCosmikMarkerBridge(Node):
                     )
 
                 body_poses = self._compute_body_poses(human_model, human_data, q)
-                self._publish_outputs(mks_dict, q, body_poses=body_poses)
+                self._publish_outputs(mks_dict, q, body_poses=body_poses, stamp=frame_stamp)
 
         except Exception as exc:
             if self.stop_event is not None:
@@ -604,8 +622,8 @@ class RTCosmikMarkerBridge(Node):
         finally:
             self.get_logger().info('RT-COSMIK runtime loop terminated.')
 
-    def _publish_outputs(self, markers, q_values, body_poses=None):
-        now = self.get_clock().now().to_msg()
+    def _publish_outputs(self, markers, q_values, body_poses=None, stamp=None):
+        now = stamp if stamp is not None else self.get_clock().now().to_msg()
 
         try:
             q_array = np.asarray(q_values, dtype=float).flatten()

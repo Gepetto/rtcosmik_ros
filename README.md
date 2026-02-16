@@ -1,1 +1,1 @@
-ros2 launch rtcosmik_ros start.launch.py 
+ros2 launch rtcosmik_ros start.launch.py cam_calib_path:="/root/workspace/RT-COSMIK/config/cam_params"
