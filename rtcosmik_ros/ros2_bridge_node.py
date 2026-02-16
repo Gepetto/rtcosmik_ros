@@ -105,6 +105,7 @@ class RTCosmikMarkerBridge(Node):
         self._last_skew_warn_t = 0.0
         self._has_freeflyer_model = False
         self._last_invalid_warn_t = 0.0
+        self._ff_rotation_correction = pin.utils.rotate('x', np.pi / 2.0)
         self._collision_capsule_specs = [
             {
                 'name': 'right_upperarm_capsule',
@@ -854,17 +855,25 @@ class RTCosmikMarkerBridge(Node):
             return
         quat /= quat_norm
 
+        # Apply a fixed freeflyer correction so RViz axes follow project convention.
+        t_current = np.asarray(q_array[:3], dtype=float).reshape(3)
+        q_current = pin.Quaternion(float(quat[3]), float(quat[0]), float(quat[1]), float(quat[2]))
+        t_current_se3 = pin.SE3(q_current.matrix(), t_current)
+        t_correction = pin.SE3(self._ff_rotation_correction, np.zeros(3))
+        t_corrected = t_correction * t_current_se3
+        q_corrected = pin.Quaternion(t_corrected.rotation)
+
         msg = TransformStamped()
         msg.header.stamp = stamp
         msg.header.frame_id = self.world_frame_id
         msg.child_frame_id = self.base_frame_id
-        msg.transform.translation.x = float(q_array[0])
-        msg.transform.translation.y = float(q_array[1])
-        msg.transform.translation.z = float(q_array[2])
-        msg.transform.rotation.x = float(quat[0])
-        msg.transform.rotation.y = float(quat[1])
-        msg.transform.rotation.z = float(quat[2])
-        msg.transform.rotation.w = float(quat[3])
+        msg.transform.translation.x = float(t_corrected.translation[0])
+        msg.transform.translation.y = float(t_corrected.translation[1])
+        msg.transform.translation.z = float(t_corrected.translation[2])
+        msg.transform.rotation.x = float(q_corrected.x)
+        msg.transform.rotation.y = float(q_corrected.y)
+        msg.transform.rotation.z = float(q_corrected.z)
+        msg.transform.rotation.w = float(q_corrected.w)
         self.tf_broadcaster_.sendTransform(msg)
 
     def destroy_node(self):
