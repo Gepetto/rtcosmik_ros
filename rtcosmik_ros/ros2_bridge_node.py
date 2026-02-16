@@ -31,6 +31,7 @@ from rtcosmik.camera.camera import Camera
 from rtcosmik.camera.cam_utils import (
     list_cameras,
     load_camera_parameters,
+    load_world_transformation,
 )
 from rtcosmik.config_loader import settings
 from rtcosmik.filtering.iir import IIR
@@ -98,6 +99,8 @@ class RTCosmikMarkerBridge(Node):
         self._mtxs = None
         self._dists = None
         self._projections = None
+        self._world_r1_cam = np.eye(3, dtype=float)
+        self._world_t1_cam = np.zeros(3, dtype=float)
         self._max_frame_skew_s = 0.050
         self._last_skew_warn_t = 0.0
         self._has_freeflyer_model = False
@@ -208,6 +211,16 @@ class RTCosmikMarkerBridge(Node):
             settings.cam_calib_path = cam_calib_path
 
         self._mtxs, self._dists, self._projections, _, _ = load_camera_parameters(cam_calib_path)
+        try:
+            self._world_r1_cam, self._world_t1_cam = load_world_transformation(cam_calib_path)
+            self._world_r1_cam = np.asarray(self._world_r1_cam, dtype=float).reshape(3, 3)
+            self._world_t1_cam = np.asarray(self._world_t1_cam, dtype=float).reshape(3)
+        except Exception as exc:
+            self.get_logger().warning(
+                f'Could not load world transform, falling back to identity: {exc}'
+            )
+            self._world_r1_cam = np.eye(3, dtype=float)
+            self._world_t1_cam = np.zeros(3, dtype=float)
 
         cameras = list_cameras()
         self._num_cameras = len(cameras)
@@ -322,9 +335,6 @@ class RTCosmikMarkerBridge(Node):
                 timestamps[i] = timestamp
 
         if any(frame is None for frame in frames):
-            return None
-
-        if not self._timestamps_are_coherent(timestamps):
             return None
 
         self._last_frame_counters = new_counters
@@ -573,8 +583,12 @@ class RTCosmikMarkerBridge(Node):
                     dists=self._dists,
                     projections=self._projections,
                 )
-                # Triangulated markers are already in the calibrated frame.
-                p3d_in_world = np.asarray(p3d, dtype=np.float32)
+                # Triangulated points are in camera-0 frame, convert to configured world frame.
+                p3d_cam0 = np.asarray(p3d, dtype=np.float32)
+                p3d_in_world = np.array(
+                    [self._world_r1_cam @ point + self._world_t1_cam for point in p3d_cam0],
+                    dtype=np.float32,
+                )
 
                 if first_sample:
                     for _ in range(settings.N):
