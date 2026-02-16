@@ -1,12 +1,37 @@
 Panels:
   - Class: rviz_common/Displays
     Name: Displays
+    Property Tree Widget:
+      Expanded:
+        - /Global Options1
+        - /Human Model1
+        - /RT-COSMIK Markers1
+        - /Right Arm Collisions1
+      Splitter Ratio: 0.55
+    Tree Height: 720
+  - Class: rviz_common/Selection
+    Name: Selection
+  - Class: rviz_common/Tool Properties
+    Name: Tool Properties
+    Splitter Ratio: 0.58
+  - Class: rviz_common/Views
+    Name: Views
+    Expanded:
+      - /Current View1
+    Splitter Ratio: 0.5
+  - Class: rviz_common/Time
+    Name: Time
 Visualization Manager:
   Class: ""
   Displays:
     - Class: rviz_default_plugins/Grid
       Name: Grid
       Enabled: true
+      Cell Size: 1
+      Plane Cell Count: 20
+      Reference Frame: <Fixed Frame>
+      Color: 160; 160; 164
+      Alpha: 0.5
     - Class: rviz_default_plugins/RobotModel
       Name: Human Model
       Enabled: true
@@ -16,15 +41,8 @@ Visualization Manager:
       TF Prefix: ""
       Visual Enabled: true
       Collision Enabled: false
-    - Class: rviz_default_plugins/PoseArray
-      Name: Body Segment Poses
-      Enabled: true
-      Topic:
-        Value: /rtcosmik/body_poses
-      Color: 25; 255; 25
-      Arrow Length: 0.07
-      Shaft Length: 0.05
-      Radius: 0.005
+      Update Interval: 0
+      Alpha: 1
     - Class: rviz_default_plugins/MarkerArray
       Name: RT-COSMIK Markers
       Enabled: true
@@ -32,9 +50,63 @@ Visualization Manager:
         Value: /rtcosmik/markers
       Namespaces:
         rtcosmik_markers: true
+    - Class: rviz_default_plugins/MarkerArray
+      Name: Right Arm Collisions
+      Enabled: true
+      Marker Topic:
+        Value: /rtcosmik/collision_markers
+      Namespaces:
+        rtcosmik_collision: true
+  Enabled: true
   Global Options:
+    Background Color: 48; 48; 48
     Fixed Frame: world
+    Frame Rate: 30
   Name: root
+  Tools:
+    - Class: rviz_default_plugins/Interact
+      Hide Inactive Objects: true
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+    - Class: rviz_default_plugins/FocusCamera
+    - Class: rviz_default_plugins/Measure
+    - Class: rviz_default_plugins/SetInitialPose
+      Topic:
+        Value: /initialpose
+    - Class: rviz_default_plugins/SetGoal
+      Topic:
+        Value: /goal_pose
+    - Class: rviz_default_plugins/PublishPoint
+      Single click: true
+      Topic:
+        Value: /clicked_point
+  Transformation:
+    Current:
+      Class: rviz_default_plugins/TF
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 3
+      Enable Stereo Rendering:
+        Stereo Eye Separation: 0.06
+        Stereo Focal Distance: 1
+        Swap Stereo Eyes: false
+        Value: false
+      Focal Point:
+        X: 0
+        Y: 0
+        Z: 1
+      Focal Shape Fixed Size: true
+      Focal Shape Size: 0.05
+      Invert Z Axis: false
+      Name: Current View
+      Near Clip Distance: 0.01
+      Pitch: 0.6
+      Target Frame: <Fixed Frame>
+      Value: Orbit (rviz_default_plugins)
+      Yaw: 0.8
 Window Geometry:
-  Height: 720
-  Width: 1280
+  Height: 900
+  Width: 1400
+  Hide Left Dock: false
+  Hide Right Dock: false

@@ -18,7 +18,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 
-from geometry_msgs.msg import Pose, PoseArray, TransformStamped
+from geometry_msgs.msg import TransformStamped
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Header, Float64MultiArray
 from tf2_ros import TransformBroadcaster
@@ -66,7 +66,6 @@ class RTCosmikMarkerBridge(Node):
             durability=DurabilityPolicy.VOLATILE,
         )
 
-        self.pose_publisher_ = self.create_publisher(PoseArray, '/rtcosmik/body_poses', self._reliable_qos)
         self.q_publisher_ = self.create_publisher(Float64MultiArray, '/rtcosmik/q', self._reliable_qos)
         self.joint_state_publisher_ = self.create_publisher(
             JointState,
@@ -76,6 +75,11 @@ class RTCosmikMarkerBridge(Node):
         self.marker_publisher_ = self.create_publisher(
             MarkerArray,
             '/rtcosmik/markers',
+            self._reliable_qos,
+        )
+        self.collision_marker_publisher_ = self.create_publisher(
+            MarkerArray,
+            '/rtcosmik/collision_markers',
             self._reliable_qos,
         )
         self.tf_broadcaster_ = TransformBroadcaster(self) if self.publish_base_tf else None
@@ -98,6 +102,39 @@ class RTCosmikMarkerBridge(Node):
         self._last_skew_warn_t = 0.0
         self._has_freeflyer_model = False
         self._last_invalid_warn_t = 0.0
+        self._collision_capsule_specs = [
+            {
+                'name': 'right_upperarm_capsule',
+                'start_frame': 'right_upperarm',
+                'end_frame': 'right_lowerarm',
+                'radius': 0.045,
+                'length_scale': 0.95,
+                'min_length': 0.08,
+                'fallback_local_axis': [0.0, -1.0, 0.0],
+                'default_length': 0.22,
+            },
+            {
+                'name': 'right_lowerarm_capsule',
+                'start_frame': 'right_lowerarm',
+                'end_frame': 'right_hand',
+                'radius': 0.035,
+                'length_scale': 0.95,
+                'min_length': 0.07,
+                'fallback_local_axis': [0.0, -1.0, 0.0],
+                'default_length': 0.20,
+            },
+            {
+                'name': 'right_hand_capsule',
+                'start_frame': 'right_hand',
+                'end_frame': None,
+                'radius': 0.03,
+                'length_scale': 1.0,
+                'min_length': 0.06,
+                'fallback_local_axis': [0.0, -1.0, 0.0],
+                'default_length': 0.12,
+            },
+        ]
+        self._collision_capsule_frame_ids = []
 
         self._start_rtcosmik_runtime()
 
@@ -346,39 +383,126 @@ class RTCosmikMarkerBridge(Node):
             self._last_invalid_warn_t = now_t
             self.get_logger().warning(message)
 
-    def _compute_body_poses(self, model, data, q):
-        if model is None or data is None:
-            return {}
-        q_array = np.asarray(q, dtype=float).flatten()
-        if q_array.size < model.nq or not np.all(np.isfinite(q_array[:model.nq])):
-            return {}
+    def _setup_collision_capsules(self, model):
+        self._collision_capsule_frame_ids = []
+        for spec in self._collision_capsule_specs:
+            start_id = model.getFrameId(spec['start_frame'])
+            end_name = spec['end_frame']
+            end_id = model.getFrameId(end_name) if end_name else None
+            if start_id >= len(model.frames):
+                self.get_logger().warning(
+                    f"Collision capsule frame not found: {spec['start_frame']}. Skipping."
+                )
+                self._collision_capsule_frame_ids.append((None, None))
+                continue
+            if end_id is not None and end_id >= len(model.frames):
+                self.get_logger().warning(
+                    f"Collision capsule frame not found: {end_name}. Using fallback axis."
+                )
+                end_id = None
+            self._collision_capsule_frame_ids.append((start_id, end_id))
 
-        # Ensure freeflyer quaternion stays normalized before kinematics.
+    def _quat_xyzw_from_two_vectors(self, vec_from, vec_to):
+        a = np.asarray(vec_from, dtype=float)
+        b = np.asarray(vec_to, dtype=float)
+        na = np.linalg.norm(a)
+        nb = np.linalg.norm(b)
+        if na < 1e-12 or nb < 1e-12:
+            return np.array([0.0, 0.0, 0.0, 1.0], dtype=float)
+        a /= na
+        b /= nb
+        dot = float(np.clip(np.dot(a, b), -1.0, 1.0))
+        if dot > 1.0 - 1e-10:
+            return np.array([0.0, 0.0, 0.0, 1.0], dtype=float)
+        if dot < -1.0 + 1e-10:
+            ortho = np.array([1.0, 0.0, 0.0], dtype=float)
+            if abs(a[0]) > 0.9:
+                ortho = np.array([0.0, 1.0, 0.0], dtype=float)
+            axis = np.cross(a, ortho)
+            axis /= np.linalg.norm(axis)
+            return np.array([axis[0], axis[1], axis[2], 0.0], dtype=float)
+
+        axis = np.cross(a, b)
+        s = np.sqrt((1.0 + dot) * 2.0)
+        invs = 1.0 / s
+        q = np.array([axis[0] * invs, axis[1] * invs, axis[2] * invs, 0.5 * s], dtype=float)
+        q /= np.linalg.norm(q)
+        return q
+
+    def _publish_collision_capsules(self, model, data, q_array, stamp):
+        if model is None or data is None:
+            return
+        if q_array.size < model.nq or not np.all(np.isfinite(q_array[:model.nq])):
+            return
+        if not self._collision_capsule_frame_ids:
+            return
+
         q_model = np.array(q_array[:model.nq], dtype=float, copy=True)
         try:
             q_model = pin.normalize(model, q_model)
             pin.forwardKinematics(model, data, q_model)
             pin.updateFramePlacements(model, data)
         except Exception as exc:
-            self._warn_throttled(f'Body pose computation skipped for invalid model state: {exc}')
-            return {}
+            self._warn_throttled(f'Skipping collision capsule update: {exc}')
+            return
 
-        poses = {}
-        for frame_id, frame in enumerate(model.frames):
-            if frame.type != pin.FrameType.BODY:
+        marker_array = MarkerArray()
+        axis_z = np.array([0.0, 0.0, 1.0], dtype=float)
+        for idx, spec in enumerate(self._collision_capsule_specs):
+            start_id, end_id = self._collision_capsule_frame_ids[idx]
+            if start_id is None:
                 continue
-            if "virtual" in frame.name:
-                continue
-            oMf = data.oMf[frame_id]
-            xyz = np.asarray(oMf.translation, dtype=float).reshape(3)
-            if not np.all(np.isfinite(xyz)):
-                continue
-            quat = pin.Quaternion(oMf.rotation)
-            poses[frame.name] = {
-                "position": [float(xyz[0]), float(xyz[1]), float(xyz[2])],
-                "orientation": [float(quat.x), float(quat.y), float(quat.z), float(quat.w)],
-            }
-        return poses
+            start_pose = data.oMf[start_id]
+            start_pos = np.asarray(start_pose.translation, dtype=float).reshape(3)
+
+            if end_id is not None:
+                end_pos = np.asarray(data.oMf[end_id].translation, dtype=float).reshape(3)
+                direction = end_pos - start_pos
+                direction_norm = np.linalg.norm(direction)
+                if direction_norm < 1e-9:
+                    local_axis = np.asarray(spec['fallback_local_axis'], dtype=float)
+                    direction = start_pose.rotation @ local_axis
+                    direction_norm = np.linalg.norm(direction)
+                if direction_norm < 1e-9:
+                    continue
+                axis_dir = direction / direction_norm
+                length = max(spec['min_length'], direction_norm * spec['length_scale'])
+                center = 0.5 * (start_pos + end_pos)
+            else:
+                local_axis = np.asarray(spec['fallback_local_axis'], dtype=float)
+                axis_dir = start_pose.rotation @ local_axis
+                axis_dir_norm = np.linalg.norm(axis_dir)
+                if axis_dir_norm < 1e-9:
+                    continue
+                axis_dir /= axis_dir_norm
+                length = spec['default_length']
+                center = start_pos + 0.5 * length * axis_dir
+
+            quat_xyzw = self._quat_xyzw_from_two_vectors(axis_z, axis_dir)
+
+            marker = Marker()
+            marker.header = Header(stamp=stamp, frame_id=self.world_frame_id)
+            marker.ns = 'rtcosmik_collision'
+            marker.id = idx
+            marker.type = Marker.CYLINDER
+            marker.action = Marker.ADD
+            marker.pose.position.x = float(center[0])
+            marker.pose.position.y = float(center[1])
+            marker.pose.position.z = float(center[2])
+            marker.pose.orientation.x = float(quat_xyzw[0])
+            marker.pose.orientation.y = float(quat_xyzw[1])
+            marker.pose.orientation.z = float(quat_xyzw[2])
+            marker.pose.orientation.w = float(quat_xyzw[3])
+            marker.scale.x = float(2.0 * spec['radius'])
+            marker.scale.y = float(2.0 * spec['radius'])
+            marker.scale.z = float(length)
+            marker.color.r = 0.15
+            marker.color.g = 0.55
+            marker.color.b = 1.0
+            marker.color.a = 0.65
+            marker_array.markers.append(marker)
+
+        self.collision_marker_publisher_.publish(marker_array)
 
     def _processing_loop(self):
         first_sample = True
@@ -579,6 +703,7 @@ class RTCosmikMarkerBridge(Node):
                         human_collision_model=human_collision_model,
                     )
                     human_data = human_model.createData()
+                    self._setup_collision_capsules(human_model)
                     self._announce_initialization_done()
                     first_sample = False
                     continue
@@ -610,8 +735,13 @@ class RTCosmikMarkerBridge(Node):
                         "Invalid ik type, should be sbs (sample by sample) or mhe (moving horizon estimation)."
                     )
 
-                body_poses = self._compute_body_poses(human_model, human_data, q)
-                self._publish_outputs(mks_dict, q, body_poses=body_poses, stamp=frame_stamp)
+                self._publish_outputs(
+                    mks_dict,
+                    q,
+                    stamp=frame_stamp,
+                    human_model=human_model,
+                    human_data=human_data,
+                )
 
         except Exception as exc:
             if self.stop_event is not None:
@@ -622,7 +752,7 @@ class RTCosmikMarkerBridge(Node):
         finally:
             self.get_logger().info('RT-COSMIK runtime loop terminated.')
 
-    def _publish_outputs(self, markers, q_values, body_poses=None, stamp=None):
+    def _publish_outputs(self, markers, q_values, stamp=None, human_model=None, human_data=None):
         now = stamp if stamp is not None else self.get_clock().now().to_msg()
 
         try:
@@ -630,8 +760,9 @@ class RTCosmikMarkerBridge(Node):
         except Exception as exc:
             self._warn_throttled(f'Skipping q publish, invalid q payload type: {exc}')
             q_array = np.array([], dtype=float)
+        q_is_valid = q_array.size > 0 and np.all(np.isfinite(q_array))
         if q_array.size > 0:
-            if np.all(np.isfinite(q_array)):
+            if q_is_valid:
                 q_msg = Float64MultiArray()
                 q_msg.data = [float(v) for v in q_array]
                 self.q_publisher_.publish(q_msg)
@@ -649,36 +780,6 @@ class RTCosmikMarkerBridge(Node):
                     self._publish_base_transform(q_array, now)
             else:
                 self._warn_throttled('Skipping non-finite q sample.')
-
-        pose_array = PoseArray()
-        pose_array.header = Header(stamp=now, frame_id=self.world_frame_id)
-        if body_poses:
-            for pose_data in body_poses.values():
-                pos = pose_data["position"]
-                ori = pose_data["orientation"]
-                if not np.all(np.isfinite(pos)) or not np.all(np.isfinite(ori)):
-                    continue
-                pose = Pose()
-                pose.position.x = float(pos[0])
-                pose.position.y = float(pos[1])
-                pose.position.z = float(pos[2])
-                pose.orientation.x = float(ori[0])
-                pose.orientation.y = float(ori[1])
-                pose.orientation.z = float(ori[2])
-                pose.orientation.w = float(ori[3])
-                pose_array.poses.append(pose)
-        else:
-            for xyz in markers.values():
-                if not np.all(np.isfinite(xyz)):
-                    continue
-                pose = Pose()
-                pose.position.x = float(xyz[0])
-                pose.position.y = float(xyz[1])
-                pose.position.z = float(xyz[2])
-                pose.orientation.w = 1.0
-                pose_array.poses.append(pose)
-
-        self.pose_publisher_.publish(pose_array)
 
         if self.enable_markers:
             marker_array = MarkerArray()
@@ -705,6 +806,9 @@ class RTCosmikMarkerBridge(Node):
                 marker.text = name
                 marker_array.markers.append(marker)
             self.marker_publisher_.publish(marker_array)
+
+        if q_is_valid:
+            self._publish_collision_capsules(human_model, human_data, q_array, now)
 
     def _extract_joint_positions(self, q_array):
         """
