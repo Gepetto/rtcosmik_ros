@@ -38,7 +38,7 @@ Visualization Manager:
       Enabled: true
       Description Source: Topic
       Description Topic:
-        Value: /robot_description
+        Value: /rtcosmik/robot_description
       TF Prefix: ""
       Visual Enabled: true
       Collision Enabled: false

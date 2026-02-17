@@ -13,6 +13,7 @@ INIT_DONE_TOKEN = 'RTCOSMIK_INIT_DONE'
 def generate_launch_description():
     use_rviz = LaunchConfiguration('use_rviz')
     cam_calib_path = LaunchConfiguration('cam_calib_path')
+    robot_description_topic = LaunchConfiguration('robot_description_topic')
     scaled_urdf_output_path = PathJoinSubstitution([
         FindPackageShare('rtcosmik_ros'),
         'urdf',
@@ -40,7 +41,10 @@ def generate_launch_description():
                 value_type=str,
             ),
         }],
-        remappings=[('joint_states', '/rtcosmik/joint_states')],
+        remappings=[
+            ('joint_states', '/rtcosmik/joint_states'),
+            ('robot_description', robot_description_topic),
+        ],
     )
 
     rviz_node = Node(
@@ -92,6 +96,14 @@ def generate_launch_description():
             description=(
                 'Optional camera calibration/config path passed to RT-COSMIK via '
                 'RTCOSMIK_CAM_CALIB_PATH environment variable.'
+            ),
+        ),
+        DeclareLaunchArgument(
+            'robot_description_topic',
+            default_value='/rtcosmik/robot_description',
+            description=(
+                'Robot description topic used for RT-COSMIK human model '
+                '(avoid overlap with other robots).'
             ),
         ),
         bridge_node,
