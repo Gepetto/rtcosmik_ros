@@ -18,7 +18,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 
-from geometry_msgs.msg import TransformStamped
+from geometry_msgs.msg import Pose, PoseArray, TransformStamped
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Header, Float64MultiArray
 from tf2_ros import TransformBroadcaster
@@ -78,11 +78,12 @@ class RTCosmikMarkerBridge(Node):
             '/rtcosmik/markers',
             self._reliable_qos,
         )
-        self.collision_marker_publisher_ = self.create_publisher(
-            MarkerArray,
-            '/rtcosmik/collision_markers',
+        self.collision_pose_array_publisher_ = self.create_publisher(
+            PoseArray,
+            '/rtcosmik/collision_poses',
             self._reliable_qos,
         )
+        self._collision_segment_pose_publishers = []
         self.tf_broadcaster_ = TransformBroadcaster(self) if self.publish_base_tf else None
 
         self.stop_event = None
@@ -109,6 +110,7 @@ class RTCosmikMarkerBridge(Node):
         self._collision_capsule_specs = [
             {
                 'name': 'right_upperarm_capsule',
+                'segment_name': 'right_upperarm',
                 'start_frame': 'right_upperarm',
                 'end_frame': 'right_lowerarm',
                 'radius': 0.045,
@@ -119,6 +121,7 @@ class RTCosmikMarkerBridge(Node):
             },
             {
                 'name': 'right_lowerarm_capsule',
+                'segment_name': 'right_lowerarm',
                 'start_frame': 'right_lowerarm',
                 'end_frame': 'right_hand',
                 'radius': 0.035,
@@ -129,6 +132,7 @@ class RTCosmikMarkerBridge(Node):
             },
             {
                 'name': 'right_hand_capsule',
+                'segment_name': 'right_hand',
                 'start_frame': 'right_hand',
                 'end_frame': None,
                 'radius': 0.03,
@@ -137,6 +141,14 @@ class RTCosmikMarkerBridge(Node):
                 'fallback_local_axis': [0.0, -1.0, 0.0],
                 'default_length': 0.12,
             },
+        ]
+        self._collision_segment_pose_publishers = [
+            self.create_publisher(
+                Pose,
+                f"/rtcosmik/collision_pose/{spec['segment_name']}",
+                self._reliable_qos,
+            )
+            for spec in self._collision_capsule_specs
         ]
         self._collision_capsule_frame_ids = []
 
@@ -457,7 +469,8 @@ class RTCosmikMarkerBridge(Node):
             self._warn_throttled(f'Skipping collision capsule update: {exc}')
             return
 
-        marker_array = MarkerArray()
+        pose_array = PoseArray()
+        pose_array.header = Header(stamp=stamp, frame_id=self.world_frame_id)
         axis_z = np.array([0.0, 0.0, 1.0], dtype=float)
         for idx, spec in enumerate(self._collision_capsule_specs):
             start_id, end_id = self._collision_capsule_frame_ids[idx]
@@ -491,29 +504,20 @@ class RTCosmikMarkerBridge(Node):
 
             quat_xyzw = self._quat_xyzw_from_two_vectors(axis_z, axis_dir)
 
-            marker = Marker()
-            marker.header = Header(stamp=stamp, frame_id=self.world_frame_id)
-            marker.ns = 'rtcosmik_collision'
-            marker.id = idx
-            marker.type = Marker.CYLINDER
-            marker.action = Marker.ADD
-            marker.pose.position.x = float(center[0])
-            marker.pose.position.y = float(center[1])
-            marker.pose.position.z = float(center[2])
-            marker.pose.orientation.x = float(quat_xyzw[0])
-            marker.pose.orientation.y = float(quat_xyzw[1])
-            marker.pose.orientation.z = float(quat_xyzw[2])
-            marker.pose.orientation.w = float(quat_xyzw[3])
-            marker.scale.x = float(2.0 * spec['radius'])
-            marker.scale.y = float(2.0 * spec['radius'])
-            marker.scale.z = float(length)
-            marker.color.r = 0.15
-            marker.color.g = 0.55
-            marker.color.b = 1.0
-            marker.color.a = 0.65
-            marker_array.markers.append(marker)
+            pose_msg = Pose()
+            pose_msg.position.x = float(center[0])
+            pose_msg.position.y = float(center[1])
+            pose_msg.position.z = float(center[2])
+            pose_msg.orientation.x = float(quat_xyzw[0])
+            pose_msg.orientation.y = float(quat_xyzw[1])
+            pose_msg.orientation.z = float(quat_xyzw[2])
+            pose_msg.orientation.w = float(quat_xyzw[3])
+            pose_array.poses.append(pose_msg)
 
-        self.collision_marker_publisher_.publish(marker_array)
+            if idx < len(self._collision_segment_pose_publishers):
+                self._collision_segment_pose_publishers[idx].publish(pose_msg)
+
+        self.collision_pose_array_publisher_.publish(pose_array)
 
     def _processing_loop(self):
         first_sample = True
