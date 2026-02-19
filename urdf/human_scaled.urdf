@@ -438,7 +438,7 @@
   <joint name="left_hip_Z" type="revolute">
     <parent link="middle_pelvis" />
     <child link="left_upperleg_virtual" />
-    <origin xyz="0.027065 -0.091276 -0.088475" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="-0.006486 -0.098743 -0.095338" rpy="0.000000 -0.000000 0.000000" />
     <axis xyz="0.000000 0.000000 1.000000" />
     <limit effort="185" velocity="12" lower="-1.04719667" upper="3.14159" />
   </joint>
@@ -459,14 +459,14 @@
   <joint name="left_knee_Z" type="revolute">
     <parent link="left_upperleg" />
     <child link="left_lowerleg" />
-    <origin xyz="0.000000 -0.398047 0.000000" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="0.000000 -0.369602 0.000000" rpy="0.000000 -0.000000 0.000000" />
     <axis xyz="0.000000 0.000000 -1.000000" />
     <limit effort="130" velocity="18.6" lower="0" upper="3.14159" />
   </joint>
   <joint name="left_ankle_Z" type="revolute">
     <parent link="left_lowerleg" />
     <child link="left_foot_virtual" />
-    <origin xyz="0.000000 -0.441434 0.000000" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="0.000000 -0.436487 0.000000" rpy="0.000000 -0.000000 0.000000" />
     <axis xyz="0.000000 0.000000 1.000000" />
     <limit effort="126" velocity="12.7" lower="-1.570795" upper="0.7853975" />
   </joint>
@@ -494,7 +494,7 @@
   <joint name="middle_thoracic_Z" type="revolute">
     <parent link="middle_abdomen" />
     <child link="middle_thorax_virtual" />
-    <origin xyz="0.000000 0.151074 0.000000" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="0.000000 0.147432 0.000000" rpy="0.000000 -0.000000 0.000000" />
     <axis xyz="0.000000 0.000000 -1.000000" />
     <limit effort="190" velocity="5.2" lower="-0.392699" upper="1.0472" />
   </joint>
@@ -515,14 +515,14 @@
   <joint name="left_clavicle_joint_X" type="revolute">
     <parent link="middle_thorax" />
     <child link="left_clavicle" />
-    <origin xyz="0.000000 0.326640 0.000000" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="0.000000 0.329314 0.000000" rpy="0.000000 -0.000000 0.000000" />
     <axis xyz="1.000000 0.000000 0.000000" />
     <limit effort="100" velocity="14" lower="-0.349066" upper="1.0472" />
   </joint>
   <joint name="left_shoulder_Z" type="revolute">
     <parent link="left_clavicle" />
     <child link="left_upperarm_virtual" />
-    <origin xyz="-0.005127 -0.053255 -0.173145" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="-0.001260 -0.050254 -0.171838" rpy="0.000000 -0.000000 0.000000" />
     <axis xyz="0.000000 0.000000 1.000000" />
     <limit effort="92" velocity="17.6" lower="-3.14159" upper="3.14159" />
   </joint>
@@ -543,7 +543,7 @@
   <joint name="left_elbow_Z" type="revolute">
     <parent link="left_upperarm" />
     <child link="left_lowerarm_virtual" />
-    <origin xyz="0.000000 -0.291479 0.000000" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="0.000000 -0.282811 0.000000" rpy="0.000000 -0.000000 0.000000" />
     <axis xyz="0.000000 0.000000 1.000000" />
     <limit effort="77" velocity="19.9" lower="0" upper="2.61799167" />
   </joint>
@@ -557,7 +557,7 @@
   <joint name="left_wrist_Z" type="revolute">
     <parent link="left_lowerarm" />
     <child link="left_hand_virtual" />
-    <origin xyz="0.000000 -0.259826 0.000000" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="0.000000 -0.242503 0.000000" rpy="0.000000 -0.000000 0.000000" />
     <axis xyz="0.000000 0.000000 1.000000" />
     <limit effort="185" velocity="25" lower="-1.5708" upper="1.5708" />
   </joint>
@@ -571,7 +571,7 @@
   <joint name="middle_cervical_Z" type="revolute">
     <parent link="middle_thorax" />
     <child link="middle_head_virtual" />
-    <origin xyz="0.000000 0.353783 0.000000" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="0.000000 0.375732 0.000000" rpy="0.000000 -0.000000 0.000000" />
     <axis xyz="0.000000 0.000000 -1.000000" />
     <limit effort="100" velocity="8.7" lower="-1.5708" upper="1.5708" />
   </joint>
@@ -592,14 +592,14 @@
   <joint name="right_clavicle_joint_X" type="revolute">
     <parent link="middle_thorax" />
     <child link="right_clavicle" />
-    <origin xyz="0.000000 0.326640 0.000000" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="0.000000 0.329314 0.000000" rpy="0.000000 -0.000000 0.000000" />
     <axis xyz="-1.000000 0.000000 0.000000" />
     <limit effort="100" velocity="14" lower="-0.349066" upper="1.0472" />
   </joint>
   <joint name="right_shoulder_Z" type="revolute">
     <parent link="right_clavicle" />
     <child link="right_upperarm_virtual" />
-    <origin xyz="0.005127 -0.064598 0.173145" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="0.001260 -0.066733 0.171838" rpy="0.000000 -0.000000 0.000000" />
     <axis xyz="0.000000 0.000000 1.000000" />
     <limit effort="92" velocity="17.6" lower="-3.14159" upper="3.14159" />
   </joint>
@@ -620,7 +620,7 @@
   <joint name="right_elbow_Z" type="revolute">
     <parent link="right_upperarm" />
     <child link="right_lowerarm_virtual" />
-    <origin xyz="0.000000 -0.281571 0.000000" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="0.000000 -0.286027 0.000000" rpy="0.000000 -0.000000 0.000000" />
     <axis xyz="0.000000 0.000000 1.000000" />
     <limit effort="77" velocity="19.9" lower="0" upper="2.61799167" />
   </joint>
@@ -634,7 +634,7 @@
   <joint name="right_wrist_Z" type="revolute">
     <parent link="right_lowerarm" />
     <child link="right_hand_virtual" />
-    <origin xyz="0.000000 -0.272273 0.000000" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="0.000000 -0.261213 0.000000" rpy="0.000000 -0.000000 0.000000" />
     <axis xyz="0.000000 0.000000 1.000000" />
     <limit effort="100" velocity="25" lower="-1.5708" upper="1.5708" />
   </joint>
@@ -648,7 +648,7 @@
   <joint name="right_hip_Z" type="revolute">
     <parent link="middle_pelvis" />
     <child link="right_upperleg_virtual" />
-    <origin xyz="0.027065 -0.090695 0.089070" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="-0.006486 -0.097740 0.096366" rpy="0.000000 -0.000000 0.000000" />
     <axis xyz="0.000000 0.000000 1.000000" />
     <limit effort="185" velocity="12" lower="-1.04719667" upper="3.14159" />
   </joint>
@@ -669,14 +669,14 @@
   <joint name="right_knee_Z" type="revolute">
     <parent link="right_upperleg" />
     <child link="right_lowerleg" />
-    <origin xyz="0.000000 -0.408248 0.000000" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="0.000000 -0.395293 0.000000" rpy="0.000000 -0.000000 0.000000" />
     <axis xyz="0.000000 0.000000 -1.000000" />
     <limit effort="130" velocity="18.6" lower="0" upper="3.14159" />
   </joint>
   <joint name="right_ankle_Z" type="revolute">
     <parent link="right_lowerleg" />
     <child link="right_foot_virtual" />
-    <origin xyz="0.000000 -0.442597 0.000000" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="0.000000 -0.429759 0.000000" rpy="0.000000 -0.000000 0.000000" />
     <axis xyz="0.000000 0.000000 1.000000" />
     <limit effort="126" velocity="12.7" lower="-1.570795" upper="0.7853975" />
   </joint>
@@ -699,7 +699,7 @@
   <joint name="joint_Nose" type="fixed">
     <parent link="middle_head" />
     <child link="Nose" />
-    <origin xyz="0.130070 0.163208 -0.039787" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="0.168114 0.105911 0.030550" rpy="0.000000 -0.000000 0.000000" />
   </joint>
   <link name="Head">
     <visual>
@@ -713,7 +713,7 @@
   <joint name="joint_Head" type="fixed">
     <parent link="middle_head" />
     <child link="Head" />
-    <origin xyz="-0.045813 0.277026 -0.016156" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="-0.025305 0.280497 0.019934" rpy="0.000000 -0.000000 0.000000" />
   </joint>
   <link name="REar">
     <visual>
@@ -727,7 +727,7 @@
   <joint name="joint_REar" type="fixed">
     <parent link="middle_head" />
     <child link="REar" />
-    <origin xyz="-0.012084 0.155851 0.065578" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="-0.023065 0.138062 0.084845" rpy="0.000000 -0.000000 0.000000" />
   </joint>
   <link name="LEar">
     <visual>
@@ -741,7 +741,7 @@
   <joint name="joint_LEar" type="fixed">
     <parent link="middle_head" />
     <child link="LEar" />
-    <origin xyz="-0.017107 0.150498 -0.094416" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="-0.018169 0.150982 -0.065592" rpy="0.000000 -0.000000 0.000000" />
   </joint>
   <link name="REye">
     <visual>
@@ -755,7 +755,7 @@
   <joint name="joint_REye" type="fixed">
     <parent link="middle_head" />
     <child link="REye" />
-    <origin xyz="0.079463 0.197698 0.002735" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="0.123623 0.147197 0.062523" rpy="0.000000 -0.000000 0.000000" />
   </joint>
   <link name="LEye">
     <visual>
@@ -769,7 +769,7 @@
   <joint name="joint_LEye" type="fixed">
     <parent link="middle_head" />
     <child link="LEye" />
-    <origin xyz="0.081935 0.197090 -0.066894" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="0.120538 0.153713 -0.003514" rpy="0.000000 -0.000000 0.000000" />
   </joint>
   <link name="RPSI">
     <visual>
@@ -783,7 +783,7 @@
   <joint name="joint_RPSI" type="fixed">
     <parent link="middle_pelvis" />
     <child link="RPSI" />
-    <origin xyz="-0.098164 -0.004014 0.059074" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="-0.072023 0.004415 0.064792" rpy="0.000000 -0.000000 0.000000" />
   </joint>
   <link name="LPSI">
     <visual>
@@ -797,7 +797,7 @@
   <joint name="joint_LPSI" type="fixed">
     <parent link="middle_pelvis" />
     <child link="LPSI" />
-    <origin xyz="-0.101837 -0.002786 -0.060705" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="-0.078210 0.002657 -0.056720" rpy="0.000000 -0.000000 0.000000" />
   </joint>
   <link name="RASI">
     <visual>
@@ -811,7 +811,7 @@
   <joint name="joint_RASI" type="fixed">
     <parent link="middle_pelvis" />
     <child link="RASI" />
-    <origin xyz="0.101042 -0.001397 0.121506" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="0.072973 -0.004670 0.137746" rpy="0.000000 -0.000000 0.000000" />
   </joint>
   <link name="LASI">
     <visual>
@@ -825,7 +825,7 @@
   <joint name="joint_LASI" type="fixed">
     <parent link="middle_pelvis" />
     <child link="LASI" />
-    <origin xyz="0.102284 -0.001241 -0.124399" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="0.068360 -0.013725 -0.127581" rpy="0.000000 -0.000000 0.000000" />
   </joint>
   <link name="T11">
     <visual>
@@ -839,7 +839,7 @@
   <joint name="joint_T11" type="fixed">
     <parent link="middle_abdomen" />
     <child link="T11" />
-    <origin xyz="-0.146801 0.226085 -0.003078" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="-0.130494 0.222348 -0.001312" rpy="0.000000 -0.000000 0.000000" />
   </joint>
   <link name="RSHO">
     <visual>
@@ -853,7 +853,7 @@
   <joint name="joint_RSHO" type="fixed">
     <parent link="right_clavicle" />
     <child link="RSHO" />
-    <origin xyz="-0.019471 -0.003183 0.173189" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="-0.027063 0.000745 0.177333" rpy="0.000000 -0.000000 0.000000" />
   </joint>
   <link name="LSHO">
     <visual>
@@ -867,7 +867,7 @@
   <joint name="joint_LSHO" type="fixed">
     <parent link="left_clavicle" />
     <child link="LSHO" />
-    <origin xyz="-0.034143 0.007389 -0.172981" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="-0.031782 0.008956 -0.166478" rpy="0.000000 -0.000000 0.000000" />
   </joint>
   <link name="C7">
     <visual>
@@ -881,7 +881,7 @@
   <joint name="joint_C7" type="fixed">
     <parent link="middle_thorax" />
     <child link="C7" />
-    <origin xyz="-0.094732 0.363437 0.000272" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="-0.111923 0.374361 0.005497" rpy="0.000000 -0.000000 0.000000" />
   </joint>
   <link name="T6">
     <visual>
@@ -895,7 +895,7 @@
   <joint name="joint_T6" type="fixed">
     <parent link="middle_thorax" />
     <child link="T6" />
-    <origin xyz="-0.148961 0.214853 0.000566" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="-0.131836 0.225908 0.000555" rpy="0.000000 -0.000000 0.000000" />
   </joint>
   <link name="RMELB">
     <visual>
@@ -909,7 +909,7 @@
   <joint name="joint_RMELB" type="fixed">
     <parent link="right_upperarm" />
     <child link="RMELB" />
-    <origin xyz="-0.020433 -0.289277 -0.058060" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="-0.018748 -0.292968 -0.047333" rpy="0.000000 -0.000000 0.000000" />
   </joint>
   <link name="RELB">
     <visual>
@@ -923,7 +923,7 @@
   <joint name="joint_RELB" type="fixed">
     <parent link="right_upperarm" />
     <child link="RELB" />
-    <origin xyz="0.026058 -0.271924 0.026577" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="0.018990 -0.280749 0.022614" rpy="0.000000 -0.000000 0.000000" />
   </joint>
   <link name="RMWRI">
     <visual>
@@ -937,7 +937,7 @@
   <joint name="joint_RMWRI" type="fixed">
     <parent link="right_lowerarm" />
     <child link="RMWRI" />
-    <origin xyz="-0.008285 -0.270246 -0.024100" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="-0.007154 -0.264752 -0.017388" rpy="0.000000 -0.000000 0.000000" />
   </joint>
   <link name="RWRI">
     <visual>
@@ -951,7 +951,7 @@
   <joint name="joint_RWRI" type="fixed">
     <parent link="right_lowerarm" />
     <child link="RWRI" />
-    <origin xyz="-0.006814 -0.273341 0.023422" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="-0.006259 -0.257874 0.019761" rpy="0.000000 -0.000000 0.000000" />
   </joint>
   <link name="RTHU">
     <visual>
@@ -965,7 +965,7 @@
   <joint name="joint_RTHU" type="fixed">
     <parent link="right_hand" />
     <child link="RTHU" />
-    <origin xyz="0.007281 -0.113641 0.056225" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="0.006278 -0.100421 0.039918" rpy="0.000000 -0.000000 0.000000" />
   </joint>
   <link name="RMID">
     <visual>
@@ -979,7 +979,7 @@
   <joint name="joint_RMID" type="fixed">
     <parent link="right_hand" />
     <child link="RMID" />
-    <origin xyz="0.000080 -0.137609 0.000093" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="0.000367 -0.137894 0.000150" rpy="0.000000 -0.000000 0.000000" />
   </joint>
   <link name="RPIN">
     <visual>
@@ -993,7 +993,7 @@
   <joint name="joint_RPIN" type="fixed">
     <parent link="right_hand" />
     <child link="RPIN" />
-    <origin xyz="0.012158 -0.148612 -0.052697" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="0.002559 -0.159945 -0.047535" rpy="0.000000 -0.000000 0.000000" />
   </joint>
   <link name="LMELB">
     <visual>
@@ -1007,7 +1007,7 @@
   <joint name="joint_LMELB" type="fixed">
     <parent link="left_upperarm" />
     <child link="LMELB" />
-    <origin xyz="-0.016917 -0.295805 0.054004" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="-0.013417 -0.287073 0.045780" rpy="0.000000 -0.000000 0.000000" />
   </joint>
   <link name="LELB">
     <visual>
@@ -1021,7 +1021,7 @@
   <joint name="joint_LELB" type="fixed">
     <parent link="left_upperarm" />
     <child link="LELB" />
-    <origin xyz="0.019872 -0.286033 -0.029213" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="0.015725 -0.277010 -0.017679" rpy="0.000000 -0.000000 0.000000" />
   </joint>
   <link name="LMWRI">
     <visual>
@@ -1035,7 +1035,7 @@
   <joint name="joint_LMWRI" type="fixed">
     <parent link="left_lowerarm" />
     <child link="LMWRI" />
-    <origin xyz="-0.006506 -0.259936 0.022722" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="-0.008199 -0.246444 0.015818" rpy="0.000000 -0.000000 0.000000" />
   </joint>
   <link name="LWRI">
     <visual>
@@ -1049,7 +1049,7 @@
   <joint name="joint_LWRI" type="fixed">
     <parent link="left_lowerarm" />
     <child link="LWRI" />
-    <origin xyz="-0.006341 -0.258749 -0.024338" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="-0.007147 -0.235756 -0.014928" rpy="0.000000 -0.000000 0.000000" />
   </joint>
   <link name="LTHU">
     <visual>
@@ -1063,7 +1063,7 @@
   <joint name="joint_LTHU" type="fixed">
     <parent link="left_hand" />
     <child link="LTHU" />
-    <origin xyz="0.002180 -0.127100 -0.056172" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="0.006212 -0.092085 -0.033361" rpy="0.000000 -0.000000 0.000000" />
   </joint>
   <link name="LMID">
     <visual>
@@ -1077,7 +1077,7 @@
   <joint name="joint_LMID" type="fixed">
     <parent link="left_hand" />
     <child link="LMID" />
-    <origin xyz="-0.000075 -0.128615 -0.000133" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="0.000158 -0.118830 -0.000086" rpy="0.000000 -0.000000 0.000000" />
   </joint>
   <link name="LPIN">
     <visual>
@@ -1091,7 +1091,7 @@
   <joint name="joint_LPIN" type="fixed">
     <parent link="left_hand" />
     <child link="LPIN" />
-    <origin xyz="0.013955 -0.128964 0.047523" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="0.005591 -0.133267 0.031496" rpy="0.000000 -0.000000 0.000000" />
   </joint>
   <link name="RKNE">
     <visual>
@@ -1105,7 +1105,7 @@
   <joint name="joint_RKNE" type="fixed">
     <parent link="right_upperleg" />
     <child link="RKNE" />
-    <origin xyz="0.010287 -0.411869 0.060971" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="0.019239 -0.394820 0.042566" rpy="0.000000 -0.000000 0.000000" />
   </joint>
   <link name="RMKNE">
     <visual>
@@ -1119,7 +1119,7 @@
   <joint name="joint_RMKNE" type="fixed">
     <parent link="right_upperleg" />
     <child link="RMKNE" />
-    <origin xyz="-0.009995 -0.409755 -0.056347" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="-0.019234 -0.392180 -0.081665" rpy="0.000000 -0.000000 0.000000" />
   </joint>
   <link name="RMANK">
     <visual>
@@ -1133,7 +1133,7 @@
   <joint name="joint_RMANK" type="fixed">
     <parent link="right_lowerleg" />
     <child link="RMANK" />
-    <origin xyz="0.009536 -0.442994 -0.037009" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="-0.019286 -0.443148 -0.058842" rpy="0.000000 -0.000000 0.000000" />
   </joint>
   <link name="RANK">
     <visual>
@@ -1147,7 +1147,7 @@
   <joint name="joint_RANK" type="fixed">
     <parent link="right_lowerleg" />
     <child link="RANK" />
-    <origin xyz="-0.010131 -0.447277 0.033364" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="0.026776 -0.412372 -0.006134" rpy="0.000000 -0.000000 0.000000" />
   </joint>
   <link name="RTOE">
     <visual>
@@ -1161,7 +1161,7 @@
   <joint name="joint_RTOE" type="fixed">
     <parent link="right_foot" />
     <child link="RTOE" />
-    <origin xyz="0.237660 -0.040074 -0.037635" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="0.138472 -0.041739 -0.039254" rpy="0.000000 -0.000000 0.000000" />
   </joint>
   <link name="R5MHD">
     <visual>
@@ -1175,7 +1175,7 @@
   <joint name="joint_R5MHD" type="fixed">
     <parent link="right_foot" />
     <child link="R5MHD" />
-    <origin xyz="0.159887 -0.055583 0.037801" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="0.122945 -0.017119 0.031094" rpy="0.000000 -0.000000 0.000000" />
   </joint>
   <link name="RHEE">
     <visual>
@@ -1189,7 +1189,7 @@
   <joint name="joint_RHEE" type="fixed">
     <parent link="right_foot" />
     <child link="RHEE" />
-    <origin xyz="-0.072084 -0.050443 -0.007127" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="0.010354 0.000286 -0.061308" rpy="0.000000 -0.000000 0.000000" />
   </joint>
   <link name="LKNE">
     <visual>
@@ -1203,7 +1203,7 @@
   <joint name="joint_LKNE" type="fixed">
     <parent link="left_upperleg" />
     <child link="LKNE" />
-    <origin xyz="0.015121 -0.400490 -0.054835" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="0.011749 -0.372980 -0.046821" rpy="0.000000 -0.000000 0.000000" />
   </joint>
   <link name="LMKNE">
     <visual>
@@ -1217,7 +1217,7 @@
   <joint name="joint_LMKNE" type="fixed">
     <parent link="left_upperleg" />
     <child link="LMKNE" />
-    <origin xyz="-0.014666 -0.399625 0.058599" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="-0.010001 -0.370675 0.072922" rpy="0.000000 -0.000000 0.000000" />
   </joint>
   <link name="LMANK">
     <visual>
@@ -1231,7 +1231,7 @@
   <joint name="joint_LMANK" type="fixed">
     <parent link="left_lowerleg" />
     <child link="LMANK" />
-    <origin xyz="0.006961 -0.441962 0.036069" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="0.013752 -0.433247 0.036791" rpy="0.000000 -0.000000 0.000000" />
   </joint>
   <link name="LANK">
     <visual>
@@ -1245,7 +1245,7 @@
   <joint name="joint_LANK" type="fixed">
     <parent link="left_lowerleg" />
     <child link="LANK" />
-    <origin xyz="-0.007232 -0.444898 -0.033953" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="-0.013731 -0.443231 -0.039504" rpy="0.000000 -0.000000 0.000000" />
   </joint>
   <link name="LTOE">
     <visual>
@@ -1259,7 +1259,7 @@
   <joint name="joint_LTOE" type="fixed">
     <parent link="left_foot" />
     <child link="LTOE" />
-    <origin xyz="0.203605 -0.039378 0.025393" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="0.205957 -0.027467 0.024858" rpy="0.000000 -0.000000 0.000000" />
   </joint>
   <link name="L5MHD">
     <visual>
@@ -1273,7 +1273,7 @@
   <joint name="joint_L5MHD" type="fixed">
     <parent link="left_foot" />
     <child link="L5MHD" />
-    <origin xyz="0.160182 -0.042424 -0.039591" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="0.134114 -0.050876 -0.053920" rpy="0.000000 -0.000000 0.000000" />
   </joint>
   <link name="LHEE">
     <visual>
@@ -1287,6 +1287,6 @@
   <joint name="joint_LHEE" type="fixed">
     <parent link="left_foot" />
     <child link="LHEE" />
-    <origin xyz="-0.066672 -0.042593 0.004562" rpy="0.000000 -0.000000 0.000000" />
+    <origin xyz="-0.070497 -0.041123 -0.002756" rpy="0.000000 -0.000000 0.000000" />
   </joint>
 </robot>
