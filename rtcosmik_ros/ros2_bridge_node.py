@@ -11,7 +11,6 @@ import traceback
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
-import example_robot_data as robex
 import numpy as np
 import pinocchio as pin
 import rclpy
@@ -35,14 +34,10 @@ from rtcosmik.camera.cam_utils import (
 )
 from rtcosmik.config_loader import settings
 from rtcosmik.filtering.iir import IIR
-from rtcosmik.human_model.model_utils import (
-    mks_registration,
-    recalibrate_marker_frames_in_joint_space,
-    scale_human_model,
-)
-from rtcosmik.ik.ik import RT_IK, RT_SWIKA
-from rtcosmik.nlf.nlf import NLFEstimator
-from rtcosmik.triangulation.triangulation import triangulate_points
+from rtcosmik.pipeline.solver import HumanSolver
+from rtcosmik.model_weights import resolve_detector_engine
+from rtcosmik.nlf.nlf import NLFEstimator, extract_views
+from rtcosmik.triangulation.triangulation import reconstruct_3d
 from rtcosmik.utils.mp_utils import create_camera_shared_ressources
 from rtcosmik_ros.urdf_export import save_scaled_urdf
 
@@ -184,7 +179,18 @@ class RTCosmikMarkerBridge(Node):
                 'segment_name': 'middle_thorax',
                 'start_frame': 'middle_thorax',
                 'end_frame': None,
-                'radius': 0.09,
+                'radius': 0.12,
+                'length_scale': 1.0,
+                'min_length': 0.12,
+                'fallback_local_axis': [0.0, -1.0, 0.0],
+                'default_length': 0.40,
+            },
+            {
+                'name': 'middle_thorax_capsule2',
+                'segment_name': 'middle_thorax',
+                'start_frame': 'middle_thorax',
+                'end_frame': None,
+                'radius': 0.14,
                 'length_scale': 1.0,
                 'min_length': 0.12,
                 'fallback_local_axis': [0.0, 1.0, 0.0],
@@ -199,8 +205,9 @@ class RTCosmikMarkerBridge(Node):
                 'length_scale': 1.0,
                 'min_length': 0.10,
                 'fallback_local_axis': [0.0, 1.0, 0.0],
-                'default_length': 0.16,
+                'default_length': 0.25,
             },
+
         ]
         self._collision_segment_pose_publishers = [
             self.create_publisher(
@@ -283,9 +290,24 @@ class RTCosmikMarkerBridge(Node):
             )
             settings.cam_calib_path = cam_calib_path
 
-        self._mtxs, self._dists, self._projections, _, _ = load_camera_parameters(cam_calib_path)
+        # Enumerate the attached cameras *before* loading calibration, so the
+        # calibration loaded is for the cameras actually present. Loading the
+        # default set instead would hand a 4-camera calibration to a 2-camera
+        # rig, silently pairing each physical camera with another one's pose.
+        cameras = list_cameras()
+        cam_ids = list(cameras.keys())
+        self._num_cameras = len(cam_ids)
+        if self._num_cameras < 1:
+            raise RuntimeError('No camera found; at least one is required.')
+        self.get_logger().info(
+            f'Using {self._num_cameras} camera(s): {cam_ids}'
+        )
+
+        self._mtxs, self._dists, self._projections, _, _ = load_camera_parameters(
+            cam_calib_path, camera_ids=cam_ids)
         try:
-            self._world_r1_cam, self._world_t1_cam = load_world_transformation(cam_calib_path)
+            self._world_r1_cam, self._world_t1_cam = load_world_transformation(
+                cam_calib_path, ref_camera=cam_ids[0])
             self._world_r1_cam = np.asarray(self._world_r1_cam, dtype=float).reshape(3, 3)
             self._world_t1_cam = np.asarray(self._world_t1_cam, dtype=float).reshape(3)
         except Exception as exc:
@@ -294,11 +316,6 @@ class RTCosmikMarkerBridge(Node):
             )
             self._world_r1_cam = np.eye(3, dtype=float)
             self._world_t1_cam = np.zeros(3, dtype=float)
-
-        cameras = list_cameras()
-        self._num_cameras = len(cameras)
-        if self._num_cameras < 2:
-            raise RuntimeError('At least 2 cameras are required for triangulation.')
 
         (
             self._camera_buffers,
@@ -309,7 +326,6 @@ class RTCosmikMarkerBridge(Node):
             self.stop_event,
         ) = create_camera_shared_ressources(self._num_cameras, self._frame_shape)
 
-        cam_ids = list(cameras.keys())
         camera_processes = [
             Camera(
                 cam_id=cam_ids[i],
@@ -600,19 +616,14 @@ class RTCosmikMarkerBridge(Node):
     def _processing_loop(self):
         first_sample = True
         p3d_buffer = deque(maxlen=settings.N)
-        ik_class = None
+        solver = HumanSolver(settings, logger=self.get_logger())
         human_model = None
         human_data = None
-        human_visual_model = None
-        human_collision_model = None
-        deque_lstm_dict = None
-        x_array = None
-        u_array = None
         last_health_check_t = 0.0
 
         try:
             estimator = NLFEstimator(
-                yolo_path=settings.yolo_path,
+                yolo_path=resolve_detector_engine(settings.yolo_path, self._num_cameras),
                 nlf_path=settings.nlf_path,
                 cano_path=settings.cano_path,
                 image_size=(self._frame_shape[1], self._frame_shape[0]),
@@ -644,29 +655,12 @@ class RTCosmikMarkerBridge(Node):
                 frames, frame_stamp = frame_bundle
 
                 nlf_out, _, _, _ = estimator.estimate_from_frames(frames)
-                nlf_out_2d = nlf_out["poses2d"]
-                if nlf_out_2d is None or len(nlf_out_2d) < self._num_cameras:
+                views = extract_views(nlf_out, self._num_cameras)
+                p3d = reconstruct_3d(views, self._projections)
+                if len(p3d) == 0:
                     continue
 
-                keypoints_list = [None] * self._num_cameras
-                valid_cam_ids = []
-                for ii in range(self._num_cameras):
-                    poses2d = nlf_out_2d[ii]
-                    if poses2d is None or len(poses2d) == 0 or poses2d[0] is None:
-                        continue
-                    keypoints_list[ii] = poses2d[0].detach().float().cpu().numpy()
-                    valid_cam_ids.append(ii)
-
-                if len(valid_cam_ids) < 2:
-                    continue
-
-                p3d = triangulate_points(
-                    keypoints_list=keypoints_list,
-                    mtxs=self._mtxs,
-                    dists=self._dists,
-                    projections=self._projections,
-                )
-                # Triangulated points are in camera-0 frame, convert to configured world frame.
+                # Points come back in the reference camera frame; convert to world.
                 p3d_cam0 = np.asarray(p3d, dtype=np.float32)
                 p3d_in_world = np.array(
                     [self._world_r1_cam @ point + self._world_t1_cam for point in p3d_cam0],
@@ -693,144 +687,24 @@ class RTCosmikMarkerBridge(Node):
                 mks_dict = dict(zip(settings.marker_names, augmented_markers))
 
                 if first_sample:
-                    human = robex.human.HumanLoader(
-                        height=settings.human_height,
-                        weight=settings.human_weight,
-                        gender=settings.human_gender,
-                    ).robot
-                    human_model = human.model
-                    human_collision_model = human.collision_model
-                    human_visual_model = human.visual_model
+                    # Calibration and IK live in rtcosmik.pipeline.solver, so this
+                    # node tracks changes to either without being edited.
+                    q = solver.calibrate(mks_dict)
+                    human_model, human_data = solver.model, solver.data
                     self._has_freeflyer_model = self._model_has_freeflyer(human_model)
-
-                    human_model = scale_human_model(
-                        human_model,
-                        mks_dict,
-                        gender=settings.human_gender,
-                        subject_height=settings.human_height,
-                    )
-                    human_model = mks_registration(
-                        human_model,
-                        mks_dict,
-                        gender=settings.human_gender,
-                        subject_height=settings.human_height,
-                    )
-
-                    if settings.ik_type == 'sbs':
-                        omega = {key: 1 for key in settings.keys_to_track_list}
-                        q = pin.neutral(human_model)
-                        ik_class = RT_IK(
-                            human_model,
-                            mks_dict,
-                            q,
-                            settings.keys_to_track_list,
-                            settings.dt,
-                            omega,
-                        )
-                        q = ik_class.solve_ik_sample_casadi()
-                        ik_class._q0 = q
-
-                        human_model = recalibrate_marker_frames_in_joint_space(
-                            human_model,
-                            q,
-                            mks_dict,
-                            settings.marker_names,
-                        )
-                        ik_class = RT_IK(
-                            human_model,
-                            mks_dict,
-                            q,
-                            settings.keys_to_track_list,
-                            settings.dt,
-                            omega,
-                        )
-
-                    elif settings.ik_type == 'mhe':
-                        ik_class = RT_SWIKA(
-                            human_model,
-                            settings.keys_to_track_list,
-                            settings.N,
-                            code=settings.ik_code,
-                        )
-                        x_array = np.zeros((human_model.nq + human_model.nv, settings.N))
-                        x_array[6, :] = 1
-                        u_array = np.zeros((human_model.nv, settings.N))
-                        deque_lstm_dict = deque(maxlen=settings.N)
-                        for _ in range(settings.N):
-                            deque_lstm_dict.append(mks_dict)
-
-                        array_data = np.array(
-                            [
-                                np.hstack([d[marker] for marker in settings.keys_to_track_list])
-                                for d in deque_lstm_dict
-                            ]
-                        ).T
-                        x_array, u_array = ik_class.solve(
-                            x_array,
-                            u_array,
-                            array_data,
-                            x_array[:, -1],
-                            settings.cost_weights,
-                            settings.dt,
-                        )
-                        q = pin.neutral(human_model)
-                        q[:] = np.array(x_array[:human_model.nq, -1]).flatten()
-
-                        human_model = recalibrate_marker_frames_in_joint_space(
-                            human_model,
-                            q,
-                            mks_dict,
-                            settings.marker_names,
-                        )
-                        ik_class = RT_SWIKA(
-                            human_model,
-                            settings.keys_to_track_list,
-                            settings.N,
-                            code=settings.ik_code,
-                        )
-                    else:
-                        raise ValueError(
-                            "Invalid ik type, should be sbs (sample by sample) or mhe (moving horizon estimation)."
-                        )
 
                     self._write_scaled_urdf_from_pin_model(
                         human_model,
                         self.scaled_urdf_output_path,
-                        human_visual_model=human_visual_model,
-                        human_collision_model=human_collision_model,
+                        human_visual_model=solver.visual_model,
+                        human_collision_model=solver.collision_model,
                     )
-                    human_data = human_model.createData()
                     self._setup_collision_capsules(human_model)
                     self._announce_initialization_done()
                     first_sample = False
                     continue
 
-                if settings.ik_type == 'sbs':
-                    ik_class._dict_m = mks_dict
-                    q = ik_class.solve_ik_sample_quadprog()
-                    ik_class._q0 = q
-                elif settings.ik_type == 'mhe':
-                    deque_lstm_dict.append(mks_dict)
-                    array_data = np.array(
-                        [
-                            np.hstack([d[marker] for marker in settings.keys_to_track_list])
-                            for d in deque_lstm_dict
-                        ]
-                    ).T
-                    x_array, u_array = ik_class.solve(
-                        x_array,
-                        u_array,
-                        array_data,
-                        x_array[:, -1],
-                        settings.cost_weights,
-                        settings.dt,
-                    )
-                    q = pin.neutral(human_model)
-                    q[:] = np.array(x_array[:human_model.nq, -1]).flatten()
-                else:
-                    raise ValueError(
-                        "Invalid ik type, should be sbs (sample by sample) or mhe (moving horizon estimation)."
-                    )
+                q = solver.step(mks_dict)
 
                 self._publish_outputs(
                     mks_dict,
