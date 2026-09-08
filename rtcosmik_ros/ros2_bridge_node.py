@@ -33,6 +33,7 @@ from rtcosmik.camera.cam_utils import (
     resolve_camera_ids,
     load_camera_parameters,
     load_world_transformation,
+    cam_to_world_path,
 )
 from rtcosmik.config_loader import settings
 from rtcosmik.filtering.iir import IIR
@@ -292,7 +293,11 @@ class RTCosmikMarkerBridge(Node):
         self.declare_parameter('replay_dir', '')
         replay_dir = self.get_parameter('replay_dir').value or ''
 
-        cam_calib_path = os.getenv('RTCOSMIK_CAM_CALIB_PATH', settings.cam_calib_path)
+        # The launch file always forwards this argument, so an override that was
+        # not given arrives as an empty string rather than as an unset variable.
+        # Treating that as a path silently rebases the whole calibration on the
+        # working directory, where it is only found by accident.
+        cam_calib_path = os.getenv('RTCOSMIK_CAM_CALIB_PATH') or settings.cam_calib_path
         if cam_calib_path != settings.cam_calib_path:
             self.get_logger().info(
                 f'Overriding RT-COSMIK camera calibration path from environment: {cam_calib_path}'
@@ -326,6 +331,34 @@ class RTCosmikMarkerBridge(Node):
         # hardware each id belonged to, use that instead of trusting the index.
         resolved = resolve_camera_ids(cam_calib_path, indices)
         cam_ids = [resolved[index] for index in indices]
+
+        # The first camera is the reference frame, and only the reference is
+        # anchored in the world. Which one comes first is v4l2 enumeration
+        # order, which changes with the port each camera is plugged into, so
+        # promote a camera that actually has a cam_to_world pose. Without this
+        # the anchor is silently ignored whenever an unanchored camera happens
+        # to enumerate first, and every position ends up in that camera's own
+        # frame instead of room coordinates.
+        anchored = [i for i, cam in enumerate(cam_ids)
+                    if cam_to_world_path(cam_calib_path, cam) is not None]
+        if not anchored:
+            self.get_logger().warning(
+                f'No camera has a cam_to_world pose under {cam_calib_path}; '
+                f'positions will be in the frame of camera {cam_ids[0]} rather '
+                f'than in room coordinates.')
+        else:
+            # Lowest calibrated id among the anchored cameras, so the reference
+            # does not move when the rig is recabled or a camera is replugged.
+            first = min(anchored, key=lambda i: cam_ids[i])
+            if first != 0:
+                order = [first] + [i for i in range(len(cam_ids)) if i != first]
+                indices = [indices[i] for i in order]
+                cam_ids = [cam_ids[i] for i in order]
+                self._replay_sources = [self._replay_sources[i] for i in order]
+                self.get_logger().info(
+                    f'Camera {cam_ids[0]} holds the world anchor, so it is the '
+                    f'reference camera rather than the first one enumerated.')
+
         self._camera_indices = indices
         if cam_ids != indices:
             self.get_logger().warning(
