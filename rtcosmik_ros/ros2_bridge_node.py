@@ -3,6 +3,7 @@
 
 from collections import deque
 from datetime import datetime
+from multiprocessing import Event as MPEvent
 import os
 import shutil
 import threading
@@ -29,12 +30,14 @@ from ament_index_python.packages import get_package_share_directory
 from rtcosmik.camera.camera import Camera
 from rtcosmik.camera.cam_utils import (
     list_cameras,
+    resolve_camera_ids,
     load_camera_parameters,
     load_world_transformation,
 )
 from rtcosmik.config_loader import settings
 from rtcosmik.filtering.iir import IIR
 from rtcosmik.pipeline.solver import HumanSolver
+from rtcosmik.saver.recorder import Recorder
 from rtcosmik.model_weights import resolve_detector_engine
 from rtcosmik.nlf.nlf import NLFEstimator, extract_views
 from rtcosmik.triangulation.triangulation import reconstruct_3d
@@ -283,6 +286,12 @@ class RTCosmikMarkerBridge(Node):
         width, height = settings.width, settings.height
         self._frame_shape = (height, width, 3)
 
+        # Replaying recordings through the live path is how this node is tested
+        # without a rig. A path, so it is a node parameter; recording itself is
+        # configuration and stays in settings.py.
+        self.declare_parameter('replay_dir', '')
+        replay_dir = self.get_parameter('replay_dir').value or ''
+
         cam_calib_path = os.getenv('RTCOSMIK_CAM_CALIB_PATH', settings.cam_calib_path)
         if cam_calib_path != settings.cam_calib_path:
             self.get_logger().info(
@@ -294,13 +303,37 @@ class RTCosmikMarkerBridge(Node):
         # calibration loaded is for the cameras actually present. Loading the
         # default set instead would hand a 4-camera calibration to a 2-camera
         # rig, silently pairing each physical camera with another one's pose.
-        cameras = list_cameras()
-        cam_ids = list(cameras.keys())
-        self._num_cameras = len(cam_ids)
+        if replay_dir:
+            indices = list(settings.cameras)
+            self._replay_sources = [
+                os.path.join(replay_dir, f'camera_{c}.mp4') for c in indices]
+            missing = [s for s in self._replay_sources if not os.path.isfile(s)]
+            if missing:
+                raise FileNotFoundError(
+                    f'missing recordings for replay: {missing}')
+            self.get_logger().info(
+                f'Replaying {len(indices)} recordings from {replay_dir} as live cameras')
+        else:
+            cameras = list_cameras()
+            indices = list(cameras.keys())
+            self._replay_sources = [None] * len(indices)
+        self._num_cameras = len(indices)
         if self._num_cameras < 1:
             raise RuntimeError('No camera found; at least one is required.')
+
+        # A v4l2 index is enumeration order, not identity, so it can point at a
+        # different camera after a replug. Where the calibration records which
+        # hardware each id belonged to, use that instead of trusting the index.
+        resolved = resolve_camera_ids(cam_calib_path, indices)
+        cam_ids = [resolved[index] for index in indices]
+        self._camera_indices = indices
+        if cam_ids != indices:
+            self.get_logger().warning(
+                f'Camera indices {indices} map to calibrated cameras {cam_ids}; '
+                f'the rig appears to have been recabled since calibration.')
         self.get_logger().info(
-            f'Using {self._num_cameras} camera(s): {cam_ids}'
+            f'Using {self._num_cameras} camera(s): indices {indices} '
+            f'as calibrated cameras {cam_ids}'
         )
 
         self._mtxs, self._dists, self._projections, _, _ = load_camera_parameters(
@@ -326,9 +359,24 @@ class RTCosmikMarkerBridge(Node):
             self.stop_event,
         ) = create_camera_shared_ressources(self._num_cameras, self._frame_shape)
 
+        # Replay sources hold their first frame until the model is calibrated:
+        # a real subject stands still for it, so a recording must not run on.
+        self._calibrated_event = MPEvent()
+
+        # Video recording is a stream copy alongside capture, so it costs no
+        # decode and no re-encode.
+        record_paths = [None] * self._num_cameras
+        if settings.SAVE_VID:
+            os.makedirs(settings.SAVE_DIR, exist_ok=True)
+            record_paths = [os.path.join(settings.SAVE_DIR, f'camera_{c}.mkv')
+                            for c in self._camera_indices]
+            self.get_logger().info(f'Recording video to {settings.SAVE_DIR}')
+
         camera_processes = [
+            # The device to open is the v4l2 index; cam_ids above only says
+            # whose calibration each of these streams should be paired with.
             Camera(
-                cam_id=cam_ids[i],
+                cam_id=self._camera_indices[i],
                 shared_buffer=self._camera_buffers[i],
                 timestamp_buffer=self._camera_timestamps[i],
                 lock=self._camera_locks[i],
@@ -338,6 +386,10 @@ class RTCosmikMarkerBridge(Node):
                 frame_shape=self._frame_shape,
                 cam_fps=settings.fs,
                 cam_fourcc=settings.fourcc,
+                source=self._replay_sources[i],
+                record_path=record_paths[i],
+                realtime=bool(replay_dir),
+                calibrated_event=self._calibrated_event if replay_dir else None,
             )
             for i in range(self._num_cameras)
         ]
@@ -346,6 +398,10 @@ class RTCosmikMarkerBridge(Node):
         self.processes = camera_processes
         for process in self.processes:
             process.start()
+
+    def _frame_counter_values(self):
+        """Per-camera frame counters, for the recorded rows."""
+        return [int(c.value) for c in self._frame_counters]
 
     def _assert_camera_processes_alive(self):
         dead = []
@@ -615,6 +671,9 @@ class RTCosmikMarkerBridge(Node):
 
     def _processing_loop(self):
         first_sample = True
+        recorder = Recorder(settings, self._num_cameras,
+                            logger=self.get_logger()).start()
+        self._recorder = recorder
         p3d_buffer = deque(maxlen=settings.N)
         solver = HumanSolver(settings, logger=self.get_logger())
         human_model = None
@@ -701,10 +760,13 @@ class RTCosmikMarkerBridge(Node):
                     )
                     self._setup_collision_capsules(human_model)
                     self._announce_initialization_done()
+                    # Lets the replay sources advance past their held frame.
+                    self._calibrated_event.set()
                     first_sample = False
                     continue
 
                 q = solver.step(mks_dict)
+                recorder.record(self._frame_counter_values(), mks_dict, q)
 
                 self._publish_outputs(
                     mks_dict,
@@ -833,6 +895,10 @@ class RTCosmikMarkerBridge(Node):
         self.tf_broadcaster_.sendTransform(msg)
 
     def destroy_node(self):
+        recorder = getattr(self, '_recorder', None)
+        if recorder is not None:
+            recorder.close()
+            self._recorder = None
         if self.stop_event is not None:
             self.stop_event.set()
 

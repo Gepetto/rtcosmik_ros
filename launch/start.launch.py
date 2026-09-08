@@ -13,6 +13,7 @@ INIT_DONE_TOKEN = 'RTCOSMIK_INIT_DONE'
 def generate_launch_description():
     use_rviz = LaunchConfiguration('use_rviz')
     cam_calib_path = LaunchConfiguration('cam_calib_path')
+    replay_dir = LaunchConfiguration('replay_dir')
     robot_description_topic = LaunchConfiguration('robot_description_topic')
     scaled_urdf_output_path = PathJoinSubstitution([
         FindPackageShare('rtcosmik_ros'),
@@ -28,6 +29,7 @@ def generate_launch_description():
         additional_env={
             'RTCOSMIK_CAM_CALIB_PATH': cam_calib_path,
         },
+        parameters=[{'replay_dir': replay_dir}],
     )
 
     robot_state_publisher_node = Node(
@@ -85,6 +87,15 @@ def generate_launch_description():
         ]
 
     return LaunchDescription([
+        DeclareLaunchArgument(
+            'replay_dir',
+            default_value='',
+            description=(
+                'Replay recordings (camera_<id>.mp4) through the live path '
+                'instead of opening cameras. Paced at the recording frame rate, '
+                'so it tests whether the node keeps up.'
+            ),
+        ),
         DeclareLaunchArgument(
             'use_rviz',
             default_value='true',
