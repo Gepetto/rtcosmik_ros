@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """ROS 2 bridge: publish RT-COSMIK outputs for visualization and control."""
 
-from collections import deque
 from datetime import datetime
 from multiprocessing import Event as MPEvent
 import os
@@ -36,7 +35,7 @@ from rtcosmik.camera.cam_utils import (
     cam_to_world_path,
 )
 from rtcosmik.config_loader import settings
-from rtcosmik.filtering.iir import IIR
+from rtcosmik.filtering.iir import MarkerFilter
 from rtcosmik.pipeline.solver import HumanSolver
 from rtcosmik.saver.recorder import Recorder
 from rtcosmik.model_weights import resolve_detector_engine
@@ -707,7 +706,6 @@ class RTCosmikMarkerBridge(Node):
         recorder = Recorder(settings, self._num_cameras,
                             logger=self.get_logger()).start()
         self._recorder = recorder
-        p3d_buffer = deque(maxlen=settings.N)
         solver = HumanSolver(settings, logger=self.get_logger())
         human_model = None
         human_data = None
@@ -726,13 +724,7 @@ class RTCosmikMarkerBridge(Node):
                 device=settings.device,
             )
 
-            num_channel = 3 * len(settings.marker_names)
-            iir_filter = IIR(num_channel=num_channel, sampling_frequency=settings.fs)
-            iir_filter.add_filter(
-                order=settings.order,
-                cutoff=settings.cutoff_freq,
-                filter_type=settings.filter_type,
-            )
+            marker_filter = MarkerFilter(len(settings.marker_names), settings)
 
             while self.stop_event is not None and not self.stop_event.is_set():
                 now_t = time.monotonic()
@@ -759,23 +751,9 @@ class RTCosmikMarkerBridge(Node):
                     dtype=np.float32,
                 )
 
-                if first_sample:
-                    for _ in range(settings.N):
-                        p3d_buffer.append(p3d_in_world)
-                else:
-                    p3d_buffer.append(p3d_in_world)
-
-                if len(p3d_buffer) != settings.N:
-                    continue
-
-                p3d_buffer_array = np.array(p3d_buffer)
-                filtered_p3d_buffer = iir_filter.filter(
-                    np.reshape(p3d_buffer_array, (settings.N, 3 * len(settings.marker_names)))
-                )
-                filtered_p3d_buffer = np.reshape(
-                    filtered_p3d_buffer, (settings.N, len(settings.marker_names), 3)
-                )
-                augmented_markers = filtered_p3d_buffer[-1]
+                # One frame in, one filtered frame out. IIR.filter is stateful,
+                # so it must see each sample exactly once.
+                augmented_markers = marker_filter(p3d_in_world)
                 mks_dict = dict(zip(settings.marker_names, augmented_markers))
 
                 if first_sample:
