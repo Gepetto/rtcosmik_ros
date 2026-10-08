@@ -1,6 +1,6 @@
 # rtcosmik_ros
 
-ROS 2 overlay for [RT-COSMIK](https://gitlab.laas.fr/msabbah/rt-cosmik): runs the
+ROS 2 overlay for [RT-COSMIK](https://github.com/Gepetto/rt-cosmik): runs the
 live pipeline and publishes the result for RViz and for control.
 
 The node is a thin wrapper. Calibration and IK live in
@@ -20,6 +20,12 @@ models fetched (`scripts/bash/fetch_models.sh`), and â€” for `ik_type = "mhe"` â
 its OCP generated (`scripts/python/core/run_ocp_codegen.py`). `ffmpeg` must be on
 `PATH`: cameras are opened through it, not OpenCV.
 
+RT-COSMIK's Docker image has all of this, and ROS 2 Humble. Clone this
+repository next to `rt-cosmik`: `rt-cosmik/docker/run.sh` mounts it at
+`/root/workspace/ros_ws/src/rtcosmik_ros`, so `<ws>` above is
+`/root/workspace/ros_ws`. See RT-COSMIK's
+[installation guide](https://github.com/Gepetto/rt-cosmik/blob/main/docs/installation.md).
+
 With the acados backend, `ACADOS_SOURCE_DIR` and the acados `lib/` directory
 must be visible to the node. `ros2 launch` inherits the shell environment, so a
 normal session is fine; a service started by systemd is not, and will fail at
@@ -36,6 +42,20 @@ solver construction.
 
 Everything else is configuration and lives in RT-COSMIK's `settings.py` --
 cameras, backend, solver profile, recording. Only paths are arguments here.
+
+## Cameras
+
+The node opens the cameras of `settings.cameras`, which are calibrated camera
+ids: the `camera_<id>` of the calibration files. Each attached device is
+recognised by its USB port when the calibration has a `cameras.yaml` (as
+cams_calibration writes), so a recabled rig keeps its calibration; anything
+else plugged in, such as a laptop webcam, stays closed. A requested camera that
+is not attached stops the node with the list of what is attached. If the first
+camera has no world pose, a requested camera that has one becomes the
+reference, so positions stay in room coordinates. Recordings are named after
+the calibrated ids. This is RT-COSMIK's own selection
+(`rtcosmik.camera.cam_utils.select_live_cameras`), the same as
+`run_pipeline.py --online`.
 
 ## Published topics
 
@@ -69,6 +89,17 @@ lands on.
 
 This exercises the software path, not the capture hardware: every file source is
 always ready, so the barrier never waits and real inter-camera skew is invisible.
+
+RT-COSMIK's sample trial (`scripts/bash/fetch_sample.sh` in rt-cosmik) replays as
+is with the default `settings.cameras = (0, 2, 4, 6)`. The subject comes from
+`settings.py`: set `human_height = 1.77`, `human_weight = 62.0` and
+`human_gender = 'f'` to match its participant.
+
+```bash
+ros2 launch rtcosmik_ros start.launch.py \
+    replay_dir:=<rt-cosmik>/data/comfi_sample/videos/2112/RobotWelding \
+    cam_calib_path:=<rt-cosmik>/data/comfi_sample/cam_params/2112
+```
 
 ## Recording
 

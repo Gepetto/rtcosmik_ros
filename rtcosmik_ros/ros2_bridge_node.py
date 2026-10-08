@@ -28,11 +28,10 @@ from ament_index_python.packages import get_package_share_directory
 
 from rtcosmik.camera.camera import Camera
 from rtcosmik.camera.cam_utils import (
-    list_cameras,
-    resolve_camera_ids,
+    anchor_first,
     load_camera_parameters,
     load_world_transformation,
-    cam_to_world_path,
+    select_live_cameras,
 )
 from rtcosmik.config_loader import settings
 from rtcosmik.filtering.iir import MarkerFilter
@@ -303,69 +302,32 @@ class RTCosmikMarkerBridge(Node):
             )
             settings.cam_calib_path = cam_calib_path
 
-        # Enumerate the attached cameras *before* loading calibration, so the
-        # calibration loaded is for the cameras actually present. Loading the
-        # default set instead would hand a 4-camera calibration to a 2-camera
-        # rig, silently pairing each physical camera with another one's pose.
+        # settings.cameras names calibrated cameras: the camera_<id> of the
+        # calibration files. Only the reference camera's world pose is read, and
+        # a rig calibration anchors a single camera, so the reference must be
+        # that one.
+        cam_ids = anchor_first(cam_calib_path, settings.cameras)
+        if not cam_ids:
+            raise RuntimeError('settings.cameras is empty; at least one camera is required.')
         if replay_dir:
-            indices = list(settings.cameras)
-            self._replay_sources = [
-                os.path.join(replay_dir, f'camera_{c}.mp4') for c in indices]
-            missing = [s for s in self._replay_sources if not os.path.isfile(s)]
+            sources = [os.path.join(replay_dir, f'camera_{c}.mp4') for c in cam_ids]
+            missing = [s for s in sources if not os.path.isfile(s)]
             if missing:
                 raise FileNotFoundError(
                     f'missing recordings for replay: {missing}')
             self.get_logger().info(
-                f'Replaying {len(indices)} recordings from {replay_dir} as live cameras')
+                f'Replaying {len(sources)} recordings from {replay_dir} as live cameras')
         else:
-            cameras = list_cameras()
-            indices = list(cameras.keys())
-            self._replay_sources = [None] * len(indices)
-        self._num_cameras = len(indices)
-        if self._num_cameras < 1:
-            raise RuntimeError('No camera found; at least one is required.')
-
-        # A v4l2 index is enumeration order, not identity, so it can point at a
-        # different camera after a replug. Where the calibration records which
-        # hardware each id belonged to, use that instead of trusting the index.
-        resolved = resolve_camera_ids(cam_calib_path, indices)
-        cam_ids = [resolved[index] for index in indices]
-
-        # The first camera is the reference frame, and only the reference is
-        # anchored in the world. Which one comes first is v4l2 enumeration
-        # order, which changes with the port each camera is plugged into, so
-        # promote a camera that actually has a cam_to_world pose. Without this
-        # the anchor is silently ignored whenever an unanchored camera happens
-        # to enumerate first, and every position ends up in that camera's own
-        # frame instead of room coordinates.
-        anchored = [i for i, cam in enumerate(cam_ids)
-                    if cam_to_world_path(cam_calib_path, cam) is not None]
-        if not anchored:
-            self.get_logger().warning(
-                f'No camera has a cam_to_world pose under {cam_calib_path}; '
-                f'positions will be in the frame of camera {cam_ids[0]} rather '
-                f'than in room coordinates.')
-        else:
-            # Lowest calibrated id among the anchored cameras, so the reference
-            # does not move when the rig is recabled or a camera is replugged.
-            first = min(anchored, key=lambda i: cam_ids[i])
-            if first != 0:
-                order = [first] + [i for i in range(len(cam_ids)) if i != first]
-                indices = [indices[i] for i in order]
-                cam_ids = [cam_ids[i] for i in order]
-                self._replay_sources = [self._replay_sources[i] for i in order]
-                self.get_logger().info(
-                    f'Camera {cam_ids[0]} holds the world anchor, so it is the '
-                    f'reference camera rather than the first one enumerated.')
-
-        self._camera_indices = indices
-        if cam_ids != indices:
-            self.get_logger().warning(
-                f'Camera indices {indices} map to calibrated cameras {cam_ids}; '
-                f'the rig appears to have been recabled since calibration.')
+            # Open the device behind each requested camera -- recognised by its
+            # USB port when the calibration records one, so a recabled rig keeps
+            # its calibration -- and nothing else that happens to be plugged in.
+            sources = [f'/dev/video{index}'
+                       for index in select_live_cameras(cam_calib_path, cam_ids)]
+        self._camera_ids = cam_ids
+        self._num_cameras = len(cam_ids)
         self.get_logger().info(
-            f'Using {self._num_cameras} camera(s): indices {indices} '
-            f'as calibrated cameras {cam_ids}'
+            f'Using {self._num_cameras} camera(s): calibrated cameras {cam_ids} '
+            f'from {", ".join(sources)}'
         )
 
         self._mtxs, self._dists, self._projections, _, _ = load_camera_parameters(
@@ -401,14 +363,14 @@ class RTCosmikMarkerBridge(Node):
         if settings.SAVE_VID:
             os.makedirs(settings.SAVE_DIR, exist_ok=True)
             record_paths = [os.path.join(settings.SAVE_DIR, f'camera_{c}.mkv')
-                            for c in self._camera_indices]
+                            for c in self._camera_ids]
             self.get_logger().info(f'Recording video to {settings.SAVE_DIR}')
 
         camera_processes = [
-            # The device to open is the v4l2 index; cam_ids above only says
-            # whose calibration each of these streams should be paired with.
+            # Named by calibrated camera; the device (or recording) it reads
+            # is its source.
             Camera(
-                cam_id=self._camera_indices[i],
+                cam_id=self._camera_ids[i],
                 shared_buffer=self._camera_buffers[i],
                 timestamp_buffer=self._camera_timestamps[i],
                 lock=self._camera_locks[i],
@@ -418,7 +380,7 @@ class RTCosmikMarkerBridge(Node):
                 frame_shape=self._frame_shape,
                 cam_fps=settings.fs,
                 cam_fourcc=settings.fourcc,
-                source=self._replay_sources[i],
+                source=sources[i],
                 record_path=record_paths[i],
                 realtime=bool(replay_dir),
                 calibrated_event=self._calibrated_event if replay_dir else None,

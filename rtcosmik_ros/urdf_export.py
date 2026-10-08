@@ -87,9 +87,9 @@ def save_scaled_urdf(new_model_name, new_model_path, scaled_model, visual_model=
     urdf = ET.Element("robot", name=str(new_model_name))
 
     materials = {
-        "body_color": "0.2 0.05 0.8 0.3",
-        "body_color_R": "0.8 0.05 0.2 0.6",
-        "body_color_L": "0.05 0.8 0.2 0.6",
+        "body_color": "0.2 0.05 0.8 1",
+        "body_color_R": "0.8 0.05 0.2 1",
+        "body_color_L": "0.05 0.8 0.2 1",
         "Black": "0 0 0 1",
         "marker_color": "1 0 0 1",
     }
